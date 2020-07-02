@@ -7,6 +7,7 @@
 
 use crate::{
     errors::InternalPakeError,
+    key_exchange::traits::KeyExchange,
     keypair::{Key, KeyPair},
     map_to_curve::GroupWithMapToCurve,
     slow_hash::SlowHash,
@@ -20,10 +21,12 @@ use rand_core::{CryptoRng, RngCore};
 ///   how to hash a password to a curve point. See `group::Group` and
 ///   `map_to_curve::GroupWithMapToCurve`.
 /// * `KeyFormat`: a keypair type composed of public and private components
+/// * KeyExchange: The key exchange protocol to use in the login step
 /// * `SlowHash`: a slow hashing function, typically used for password hashing
 pub trait CipherSuite {
     type Group: GroupWithMapToCurve;
     type KeyFormat: KeyPair<Repr = Key> + PartialEq;
+    type KeyExchange: KeyExchange;
     type SlowHash: SlowHash;
 
     /// Generating a random key pair given a cryptographic rng
