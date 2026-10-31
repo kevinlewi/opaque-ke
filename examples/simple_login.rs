@@ -28,13 +28,14 @@ use std::process::exit;
 use opaque_ke::argon2::Argon2;
 use opaque_ke::ciphersuite::CipherSuite;
 use opaque_ke::generic_array::GenericArray;
-use opaque_ke::rand::rngs::OsRng;
 use opaque_ke::{
     ClientLogin, ClientLoginFinishParameters, ClientRegistration,
     ClientRegistrationFinishParameters, CredentialFinalization, CredentialRequest,
     CredentialResponse, RegistrationRequest, RegistrationResponse, RegistrationUpload, ServerLogin,
     ServerLoginParameters, ServerRegistration, ServerRegistrationLen, ServerSetup,
 };
+use rand::rand_core::UnwrapErr;
+use rand::rngs::SysRng;
 use rustyline::Editor;
 use rustyline::error::ReadlineError;
 use rustyline::history::DefaultHistory;
@@ -66,7 +67,7 @@ fn account_registration(
     username: String,
     password: String,
 ) -> GenericArray<u8, ServerRegistrationLen<DefaultCipherSuite>> {
-    let mut client_rng = OsRng;
+    let mut client_rng = UnwrapErr(SysRng);
     let client_registration_start_result =
         ClientRegistration::<DefaultCipherSuite>::start(&mut client_rng, password.as_bytes())
             .unwrap();
@@ -110,7 +111,7 @@ fn account_login(
     password: String,
     password_file_bytes: &[u8],
 ) -> bool {
-    let mut client_rng = OsRng;
+    let mut client_rng = UnwrapErr(SysRng);
     let client_login_start_result =
         ClientLogin::<DefaultCipherSuite>::start(&mut client_rng, password.as_bytes()).unwrap();
     let credential_request_bytes = client_login_start_result.message.serialize();
@@ -119,7 +120,7 @@ fn account_login(
 
     let password_file =
         ServerRegistration::<DefaultCipherSuite>::deserialize(password_file_bytes).unwrap();
-    let mut server_rng = OsRng;
+    let mut server_rng = UnwrapErr(SysRng);
     let server_login_start_result = ServerLogin::start(
         &mut server_rng,
         server_setup,
@@ -161,7 +162,7 @@ fn account_login(
 }
 
 fn main() {
-    let mut rng = OsRng;
+    let mut rng = UnwrapErr(SysRng);
     let server_setup = ServerSetup::<DefaultCipherSuite>::new(&mut rng);
 
     let mut rl = Editor::<(), _>::new().unwrap();

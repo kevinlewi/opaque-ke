@@ -12,15 +12,12 @@
 use core::marker::PhantomData;
 
 use derive_where::derive_where;
-use digest::core_api::BlockSizeUser;
-use digest::{FixedOutputReset, HashMarker};
-use ecdsa::{PrimeCurve, SignatureSize, hazmat};
-use elliptic_curve::{
-    CurveArithmetic, Field, FieldBytes, FieldBytesEncoding, FieldBytesSize, PrimeField, Scalar,
-    SecretKey,
-};
-use generic_array::{ArrayLength, GenericArray};
-use rand::{CryptoRng, RngCore};
+use digest::block_api::BlockSizeUser;
+use digest::{Digest, FixedOutputReset};
+use ecdsa::{EcdsaCurve, SignatureSize, hazmat};
+use elliptic_curve::{CurveArithmetic, Field, FieldBytes, FieldBytesSize, Scalar, SecretKey};
+use hybrid_array::{Array, ArraySize};
+use rand::CryptoRng;
 use zeroize::Zeroize;
 
 use super::{Message, MessageBuilder, SignatureProtocol};
@@ -39,23 +36,18 @@ pub struct Ecdsa<G, H>(PhantomData<(G, H)>);
 
 impl<G, H> SignatureProtocol for Ecdsa<G, H>
 where
-    G: CurveArithmetic + Group<Sk = SecretKey<G>, Pk = NonIdentity<G>> + PrimeCurve,
-    SignatureSize<G>: ArrayLength<u8>,
-    H: Clone
-        + Default
-        + BlockSizeUser
-        + FixedOutputReset<OutputSize = FieldBytesSize<G>>
-        + HashMarker,
+    G: CurveArithmetic + Group<Sk = SecretKey<G>, Pk = NonIdentity<G>> + EcdsaCurve,
+    SignatureSize<G>: ArraySize + generic_array::ArrayLength,
+    H: Clone + Default + Digest + BlockSizeUser + FixedOutputReset<OutputSize = FieldBytesSize<G>>,
 {
     type Group = G;
     type Signature = Signature<G>;
     type SignatureLen = SignatureSize<G>;
     type VerifyState<CS: CipherSuite, KE: Group> = PreHash<H>;
 
-    // We use a manual implementation of `RandomizedPrehashSigner` to use the
-    // same hash for the message as for generating `k`. See
-    // https://github.com/RustCrypto/signatures/issues/949.
-    fn sign<'a, R: CryptoRng + RngCore, CS: CipherSuite, KE: Group>(
+    // The nonce `k` is generated (RFC 6979 with added randomness) with the same
+    // hash as the message.
+    fn sign<'a, R: CryptoRng, CS: CipherSuite, KE: Group>(
         sk: &<Self::Group as Group>::Sk,
         rng: &mut R,
         message: &Message<CS, KE>,
@@ -77,7 +69,7 @@ where
         verify(pk, &state.0, &signature.0)
     }
 
-    fn serialize_signature(signature: &Self::Signature) -> GenericArray<u8, Self::SignatureLen> {
+    fn serialize_signature(signature: &Self::Signature) -> Array<u8, Self::SignatureLen> {
         signature.0.to_bytes()
     }
 
@@ -90,29 +82,17 @@ where
 
 fn sign<R, C, H>(sk: &SecretKey<C>, rng: &mut R, pre_hash: &[u8]) -> ecdsa::Signature<C>
 where
-    R: CryptoRng + RngCore,
-    C: CurveArithmetic + PrimeCurve,
-    SignatureSize<C>: ArrayLength<u8>,
-    H: Default + BlockSizeUser + FixedOutputReset<OutputSize = FieldBytesSize<C>> + HashMarker,
+    R: CryptoRng,
+    C: CurveArithmetic + EcdsaCurve,
+    SignatureSize<C>: ArraySize,
+    H: Digest + BlockSizeUser + FixedOutputReset<OutputSize = FieldBytesSize<C>>,
 {
-    let repr = sk.to_bytes();
-    let order = C::ORDER.encode_field_bytes();
-    let z =
-        hazmat::bits2field::<C>(pre_hash).expect("hash output can not be shorter than a scalar");
+    let mut ad = FieldBytes::<C>::default();
+    rng.fill_bytes(&mut ad);
 
-    // This can only fail if the computed `r` or `s` are zero, in which case we
-    // just retry with a new `k`. See https://github.com/RustCrypto/signatures/pull/951.
-    loop {
-        let mut ad = FieldBytes::<C>::default();
-        rng.fill_bytes(&mut ad);
-
-        let k =
-            Scalar::<C>::from_repr(rfc6979::generate_k::<H, _>(&repr, &order, &z, &ad)).unwrap();
-
-        if let Ok((signature, _)) = hazmat::sign_prehashed::<C, _>(&sk.to_nonzero_scalar(), k, &z) {
-            break signature;
-        }
-    }
+    let (signature, _) =
+        hazmat::sign_prehashed_rfc6979::<C, H>(&sk.to_nonzero_scalar(), pre_hash, &ad);
+    signature
 }
 
 fn verify<C>(
@@ -121,12 +101,10 @@ fn verify<C>(
     signature: &ecdsa::Signature<C>,
 ) -> Result<(), ProtocolError>
 where
-    C: CurveArithmetic + PrimeCurve,
-    SignatureSize<C>: ArrayLength<u8>,
+    C: CurveArithmetic + EcdsaCurve,
+    SignatureSize<C>: ArraySize,
 {
-    let z =
-        hazmat::bits2field::<C>(pre_hash).expect("hash output can not be shorter than a scalar");
-    hazmat::verify_prehashed(&pk.0.to_point(), &z, signature)
+    hazmat::verify_prehashed(&pk.0.to_point(), pre_hash, signature)
         .map_err(|_| ProtocolError::InvalidLoginError)
 }
 
@@ -138,13 +116,13 @@ where
     derive(serde::Deserialize, serde::Serialize),
     serde(bound = "", transparent)
 )]
-pub struct Signature<G: CurveArithmetic + PrimeCurve>(pub ecdsa::Signature<G>)
+pub struct Signature<G: CurveArithmetic + EcdsaCurve>(pub ecdsa::Signature<G>)
 where
-    SignatureSize<G>: ArrayLength<u8>;
+    SignatureSize<G>: ArraySize;
 
-impl<G: CurveArithmetic + PrimeCurve> Zeroize for Signature<G>
+impl<G: CurveArithmetic + EcdsaCurve> Zeroize for Signature<G>
 where
-    SignatureSize<G>: ArrayLength<u8>,
+    SignatureSize<G>: ArraySize + generic_array::ArrayLength,
 {
     fn zeroize(&mut self) {
         self.0 = ecdsa::Signature::from_scalars(
@@ -163,22 +141,25 @@ fn ecdsa() {
     use p256::ecdsa::signature::{DigestVerifier, RandomizedDigestSigner};
     use p256::ecdsa::{Signature, SigningKey, VerifyingKey};
     use p256::{NistP256, PublicKey};
-    use rand::rngs::OsRng;
+    use rand::Rng;
     use sha2::Sha256;
 
+    use crate::key_exchange::group::Group;
     use crate::tests::mock_rng::CycleRng;
 
     let mut rng = CycleRng::new(vec![1; 32]);
+    let mut system_rng = rand::rng();
 
     let mut message = [0; 1024];
-    OsRng.fill_bytes(&mut message);
-    let hash = Sha256::new_with_prefix(message);
+    system_rng.fill_bytes(&mut message);
 
-    let sk = NistP256::random_sk(&mut OsRng);
+    let sk = NistP256::random_sk(&mut system_rng);
     let signing_key = SigningKey::from(sk.clone());
 
-    let signature: Signature = signing_key.sign_digest_with_rng(&mut rng, hash.clone());
-    let custom_signature = sign::<_, _, Sha256>(&sk, &mut rng, &hash.clone().finalize());
+    let signature: Signature = signing_key.sign_digest_with_rng(&mut rng, |digest: &mut Sha256| {
+        Digest::update(digest, message)
+    });
+    let custom_signature = sign::<_, _, Sha256>(&sk, &mut rng, &Sha256::digest(message));
 
     assert_eq!(signature, custom_signature);
 
@@ -186,7 +167,13 @@ fn ecdsa() {
     let verifying_key = VerifyingKey::from(PublicKey::from(pk.0));
 
     verifying_key
-        .verify_digest(hash.clone(), &signature)
+        .verify_digest(
+            |digest: &mut Sha256| {
+                Digest::update(digest, message);
+                Ok(())
+            },
+            &signature,
+        )
         .unwrap();
-    verify(&pk, &hash.finalize(), &custom_signature).unwrap();
+    verify(&pk, &Sha256::digest(message), &custom_signature).unwrap();
 }

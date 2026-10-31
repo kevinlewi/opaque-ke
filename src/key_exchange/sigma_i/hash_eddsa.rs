@@ -6,13 +6,13 @@
 // of this source tree. You may select, at your option, one of the above-listed
 // licenses.
 
-//! HashEdDSA implementation for [`SigmaI`](crate::SigmaI). Currently only
+//! `HashEdDSA` implementation for [`SigmaI`](crate::SigmaI). Currently only
 //! supports [`Ed25519`](crate::Ed25519).
 
 use core::marker::PhantomData;
 
-use generic_array::GenericArray;
-use rand::{CryptoRng, RngCore};
+use hybrid_array::Array;
+use rand::CryptoRng;
 use zeroize::Zeroize;
 
 use self::implementation::HashEddsaImpl;
@@ -21,7 +21,7 @@ use crate::ciphersuite::CipherSuite;
 use crate::errors::ProtocolError;
 use crate::key_exchange::group::Group;
 
-/// HashEdDSA for [`SigmaI`](crate::SigmaI).
+/// `HashEdDSA` for [`SigmaI`](crate::SigmaI).
 ///
 /// The ["verification state"](Self::VerifyState) is the pre-hash for the
 /// message to be verified.
@@ -33,7 +33,7 @@ impl<G: HashEddsaImpl> SignatureProtocol for HashEddsa<G> {
     type SignatureLen = G::SignatureLen;
     type VerifyState<CS: CipherSuite, KE: Group> = G::VerifyState<CS, KE>;
 
-    fn sign<'a, R: CryptoRng + RngCore, CS: CipherSuite, KE: Group>(
+    fn sign<'a, R: CryptoRng, CS: CipherSuite, KE: Group>(
         sk: &<Self::Group as Group>::Sk,
         _: &mut R,
         message: &Message<CS, KE>,
@@ -50,7 +50,7 @@ impl<G: HashEddsaImpl> SignatureProtocol for HashEddsa<G> {
         G::verify(pk, state, signature)
     }
 
-    fn serialize_signature(signature: &Self::Signature) -> GenericArray<u8, Self::SignatureLen> {
+    fn serialize_signature(signature: &Self::Signature) -> Array<u8, Self::SignatureLen> {
         G::serialize_signature(signature)
     }
 
@@ -60,13 +60,13 @@ impl<G: HashEddsaImpl> SignatureProtocol for HashEddsa<G> {
 }
 
 pub(in super::super) mod implementation {
-    use generic_array::ArrayLength;
+    use hybrid_array::ArraySize;
 
     use super::*;
 
     pub trait HashEddsaImpl: Group {
         type Signature: Clone + Zeroize;
-        type SignatureLen: ArrayLength<u8>;
+        type SignatureLen: ArraySize + generic_array::ArrayLength;
         type VerifyState<CS: CipherSuite, KE: Group>: Clone + Zeroize;
 
         fn sign<CS: CipherSuite, KE: Group>(
@@ -82,7 +82,6 @@ pub(in super::super) mod implementation {
 
         fn deserialize_take_signature(bytes: &mut &[u8]) -> Result<Self::Signature, ProtocolError>;
 
-        fn serialize_signature(signature: &Self::Signature)
-        -> GenericArray<u8, Self::SignatureLen>;
+        fn serialize_signature(signature: &Self::Signature) -> Array<u8, Self::SignatureLen>;
     }
 }

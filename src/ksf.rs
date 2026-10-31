@@ -8,17 +8,14 @@
 
 //! Trait specifying a key stretching function
 
-use generic_array::{ArrayLength, GenericArray};
+use hybrid_array::{Array, ArraySize};
 
 use crate::errors::InternalError;
 
 /// Used for the key stretching function in OPAQUE
 pub trait Ksf: Default {
     /// Computes the key stretching function
-    fn hash<L: ArrayLength<u8>>(
-        &self,
-        input: GenericArray<u8, L>,
-    ) -> Result<GenericArray<u8, L>, InternalError>;
+    fn hash<L: ArraySize>(&self, input: Array<u8, L>) -> Result<Array<u8, L>, InternalError>;
 }
 
 /// A no-op hash which simply returns its input
@@ -26,21 +23,15 @@ pub trait Ksf: Default {
 pub struct Identity;
 
 impl Ksf for Identity {
-    fn hash<L: ArrayLength<u8>>(
-        &self,
-        input: GenericArray<u8, L>,
-    ) -> Result<GenericArray<u8, L>, InternalError> {
+    fn hash<L: ArraySize>(&self, input: Array<u8, L>) -> Result<Array<u8, L>, InternalError> {
         Ok(input)
     }
 }
 
 #[cfg(feature = "argon2")]
 impl Ksf for argon2::Argon2<'_> {
-    fn hash<L: ArrayLength<u8>>(
-        &self,
-        input: GenericArray<u8, L>,
-    ) -> Result<GenericArray<u8, L>, InternalError> {
-        let mut output = GenericArray::default();
+    fn hash<L: ArraySize>(&self, input: Array<u8, L>) -> Result<Array<u8, L>, InternalError> {
+        let mut output = Array::default();
         self.hash_password_into(&input, &[0; argon2::RECOMMENDED_SALT_LEN], &mut output)
             .map_err(|_| InternalError::KsfError)?;
         Ok(output)
@@ -56,13 +47,17 @@ mod tests {
     #[test]
     fn argon2_matches_0_5_3_output() {
         let ksf = argon2::Argon2::default();
-        let output = ksf.hash(GenericArray::from([42; 32])).unwrap();
+        let output = ksf
+            .hash(hybrid_array::ArrayN::<u8, 32>::from([42; 32]))
+            .unwrap();
         assert_eq!(
             hex::encode(output),
             "49fafd0e4b83b923dc3580a20f29306e64fd9c7657cef11aebb86ae5def41bda"
         );
 
-        let output = ksf.hash(GenericArray::from([42; 64])).unwrap();
+        let output = ksf
+            .hash(hybrid_array::ArrayN::<u8, 64>::from([42; 64]))
+            .unwrap();
         assert_eq!(
             hex::encode(output),
             concat!(

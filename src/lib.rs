@@ -37,7 +37,7 @@
 //!     type Ksf = opaque_ke::ksf::Identity;
 //! }
 //! ```
-//! See [examples/simple_login.rs](https://github.com/facebook/opaque-ke/blob/main/examples/simple_login.rs)
+//! See [examples/simple_login.rs](https://github.com/structured-id/sid/blob/main/crates/sid-opaque-ke/examples/simple_login.rs)
 //! for a working example of a simple password-based login using OPAQUE.
 //!
 //! Note that our choice of key stretching function in this example, `Identity`,
@@ -66,10 +66,10 @@
 //! #     type KeyExchange = opaque_ke::TripleDh<p256::NistP256, sha2::Sha256>;
 //! #     type Ksf = opaque_ke::ksf::Identity;
 //! # }
-//! use rand::RngCore;
-//! use rand::rngs::OsRng;
+//! use rand::rand_core::UnwrapErr;
+//! use rand::rngs::SysRng;
 //!
-//! let mut rng = OsRng;
+//! let mut rng = UnwrapErr(SysRng);
 //! let server_setup = ServerSetup::<Default>::new(&mut rng);
 //! # Ok::<(), ProtocolError>(())
 //! ```
@@ -123,10 +123,10 @@
 //! #     type Ksf = opaque_ke::ksf::Identity;
 //! # }
 //! use opaque_ke::ClientRegistration;
-//! use rand::RngCore;
-//! use rand::rngs::OsRng;
+//! use rand::rand_core::UnwrapErr;
+//! use rand::rngs::SysRng;
 //!
-//! let mut client_rng = OsRng;
+//! let mut client_rng = UnwrapErr(SysRng);
 //! let client_registration_start_result =
 //!     ClientRegistration::<Default>::start(&mut client_rng, b"password")?;
 //! # Ok::<(), ProtocolError>(())
@@ -160,15 +160,15 @@
 //! #     type KeyExchange = opaque_ke::TripleDh<p256::NistP256, sha2::Sha256>;
 //! #     type Ksf = opaque_ke::ksf::Identity;
 //! # }
-//! # use rand::{rngs::OsRng, RngCore};
-//! # let mut client_rng = OsRng;
+//! # use rand::rngs::SysRng; use rand::rand_core::UnwrapErr;
+//! # let mut client_rng = UnwrapErr(SysRng);
 //! # let client_registration_start_result = ClientRegistration::<Default>::start(
 //! #     &mut client_rng,
 //! #     b"password",
 //! # )?;
 //! use opaque_ke::ServerRegistration;
 //!
-//! # let mut server_rng = OsRng;
+//! # let mut server_rng = UnwrapErr(SysRng);
 //! # let server_setup = ServerSetup::<Default>::new(&mut server_rng);
 //! let server_registration_start_result = ServerRegistration::<Default>::start(
 //!     &server_setup,
@@ -207,13 +207,13 @@
 //! #     type KeyExchange = opaque_ke::TripleDh<p256::NistP256, sha2::Sha256>;
 //! #     type Ksf = opaque_ke::ksf::Identity;
 //! # }
-//! # use rand::{rngs::OsRng, RngCore};
-//! # let mut client_rng = OsRng;
+//! # use rand::rngs::SysRng; use rand::rand_core::UnwrapErr;
+//! # let mut client_rng = UnwrapErr(SysRng);
 //! # let client_registration_start_result = ClientRegistration::<Default>::start(
 //! #     &mut client_rng,
 //! #     b"password",
 //! # )?;
-//! # let mut server_rng = OsRng;
+//! # let mut server_rng = UnwrapErr(SysRng);
 //! # let server_setup = ServerSetup::<Default>::new(&mut server_rng);
 //! # let server_registration_start_result = ServerRegistration::<Default>::start(&server_setup, client_registration_start_result.message, b"alice@example.com")?;
 //! use opaque_ke::ClientRegistrationFinishParameters;
@@ -255,13 +255,13 @@
 //! #     type KeyExchange = opaque_ke::TripleDh<p256::NistP256, sha2::Sha256>;
 //! #     type Ksf = opaque_ke::ksf::Identity;
 //! # }
-//! # use rand::{rngs::OsRng, RngCore};
-//! # let mut client_rng = OsRng;
+//! # use rand::rngs::SysRng; use rand::rand_core::UnwrapErr;
+//! # let mut client_rng = UnwrapErr(SysRng);
 //! # let client_registration_start_result = ClientRegistration::<Default>::start(
 //! #     &mut client_rng,
 //! #     b"password",
 //! # )?;
-//! # let mut server_rng = OsRng;
+//! # let mut server_rng = UnwrapErr(SysRng);
 //! # let server_setup = ServerSetup::<Default>::new(&mut server_rng);
 //! # let server_registration_start_result = ServerRegistration::<Default>::start(&server_setup, client_registration_start_result.message, b"alice@example.com")?;
 //! # let client_registration_finish_result = client_registration_start_result.state.finish(&mut client_rng, b"password", server_registration_start_result.message, ClientRegistrationFinishParameters::default())?;
@@ -306,10 +306,10 @@
 //! #     type KeyExchange = opaque_ke::TripleDh<p256::NistP256, sha2::Sha256>;
 //! #     type Ksf = opaque_ke::ksf::Identity;
 //! # }
-//! # use rand::{rngs::OsRng, RngCore};
+//! # use rand::rngs::SysRng; use rand::rand_core::UnwrapErr;
 //! use opaque_ke::ClientLogin;
 //!
-//! let mut client_rng = OsRng;
+//! let mut client_rng = UnwrapErr(SysRng);
 //! let client_login_start_result = ClientLogin::<Default>::start(&mut client_rng, b"password")?;
 //! # Ok::<(), ProtocolError>(())
 //! ```
@@ -342,13 +342,13 @@
 //! #     type KeyExchange = opaque_ke::TripleDh<p256::NistP256, sha2::Sha256>;
 //! #     type Ksf = opaque_ke::ksf::Identity;
 //! # }
-//! # use rand::{rngs::OsRng, RngCore};
-//! # let mut client_rng = OsRng;
+//! # use rand::rngs::SysRng; use rand::rand_core::UnwrapErr;
+//! # let mut client_rng = UnwrapErr(SysRng);
 //! # let client_registration_start_result = ClientRegistration::<Default>::start(
 //! #     &mut client_rng,
 //! #     b"password",
 //! # )?;
-//! # let mut server_rng = OsRng;
+//! # let mut server_rng = UnwrapErr(SysRng);
 //! # let server_setup = ServerSetup::<Default>::new(&mut server_rng);
 //! # let server_registration_start_result = ServerRegistration::<Default>::start(&server_setup, client_registration_start_result.message, b"alice@example.com")?;
 //! # let client_registration_finish_result = client_registration_start_result.state.finish(&mut client_rng, b"password", server_registration_start_result.message, ClientRegistrationFinishParameters::default())?;
@@ -360,7 +360,7 @@
 //! use opaque_ke::{ServerLogin, ServerLoginParameters};
 //!
 //! let password_file = ServerRegistration::<Default>::deserialize(&password_file_bytes)?;
-//! let mut server_rng = OsRng;
+//! let mut server_rng = UnwrapErr(SysRng);
 //! let server_login_start_result = ServerLogin::start(
 //!     &mut server_rng,
 //!     &server_setup,
@@ -412,13 +412,13 @@
 //! #     type KeyExchange = opaque_ke::TripleDh<p256::NistP256, sha2::Sha256>;
 //! #     type Ksf = opaque_ke::ksf::Identity;
 //! # }
-//! # use rand::{rngs::OsRng, RngCore};
-//! # let mut client_rng = OsRng;
+//! # use rand::rngs::SysRng; use rand::rand_core::UnwrapErr;
+//! # let mut client_rng = UnwrapErr(SysRng);
 //! # let client_registration_start_result = ClientRegistration::<Default>::start(
 //! #     &mut client_rng,
 //! #     b"password",
 //! # )?;
-//! # let mut server_rng = OsRng;
+//! # let mut server_rng = UnwrapErr(SysRng);
 //! # let server_setup = ServerSetup::<Default>::new(&mut server_rng);
 //! # let server_registration_start_result = ServerRegistration::<Default>::start(&server_setup, client_registration_start_result.message, b"alice@example.com")?;
 //! # let client_registration_finish_result = client_registration_start_result.state.finish(&mut client_rng, b"password", server_registration_start_result.message, ClientRegistrationFinishParameters::default())?;
@@ -469,13 +469,13 @@
 //! #     type KeyExchange = opaque_ke::TripleDh<p256::NistP256, sha2::Sha256>;
 //! #     type Ksf = opaque_ke::ksf::Identity;
 //! # }
-//! # use rand::{rngs::OsRng, RngCore};
-//! # let mut client_rng = OsRng;
+//! # use rand::rngs::SysRng; use rand::rand_core::UnwrapErr;
+//! # let mut client_rng = UnwrapErr(SysRng);
 //! # let client_registration_start_result = ClientRegistration::<Default>::start(
 //! #     &mut client_rng,
 //! #     b"password",
 //! # )?;
-//! # let mut server_rng = OsRng;
+//! # let mut server_rng = UnwrapErr(SysRng);
 //! # let server_setup = ServerSetup::<Default>::new(&mut server_rng);
 //! # let server_registration_start_result = ServerRegistration::<Default>::start(&server_setup, client_registration_start_result.message, b"alice@example.com")?;
 //! # let client_registration_finish_result = client_registration_start_result.state.finish(&mut client_rng, b"password", server_registration_start_result.message, ClientRegistrationFinishParameters::default())?;
@@ -566,13 +566,13 @@
 //! #     type KeyExchange = opaque_ke::TripleDh<p256::NistP256, sha2::Sha256>;
 //! #     type Ksf = opaque_ke::ksf::Identity;
 //! # }
-//! # use rand::{rngs::OsRng, RngCore};
-//! # let mut client_rng = OsRng;
+//! # use rand::rngs::SysRng; use rand::rand_core::UnwrapErr;
+//! # let mut client_rng = UnwrapErr(SysRng);
 //! # let client_registration_start_result = ClientRegistration::<Default>::start(
 //! #     &mut client_rng,
 //! #     b"password",
 //! # )?;
-//! # let mut server_rng = OsRng;
+//! # let mut server_rng = UnwrapErr(SysRng);
 //! # let server_setup = ServerSetup::<Default>::new(&mut server_rng);
 //! # let server_registration_start_result = ServerRegistration::<Default>::start(&server_setup, client_registration_start_result.message, b"alice@example.com")?;
 //! // During registration, the client obtains a ClientRegistrationFinishResult with
@@ -663,13 +663,13 @@
 //! #     type KeyExchange = opaque_ke::TripleDh<p256::NistP256, sha2::Sha256>;
 //! #     type Ksf = opaque_ke::ksf::Identity;
 //! # }
-//! # use rand::{rngs::OsRng, RngCore};
-//! # let mut client_rng = OsRng;
+//! # use rand::rngs::SysRng; use rand::rand_core::UnwrapErr;
+//! # let mut client_rng = UnwrapErr(SysRng);
 //! # let client_registration_start_result = ClientRegistration::<Default>::start(
 //! #     &mut client_rng,
 //! #     b"password",
 //! # )?;
-//! # let mut server_rng = OsRng;
+//! # let mut server_rng = UnwrapErr(SysRng);
 //! # let server_setup = ServerSetup::<Default>::new(&mut server_rng);
 //! # let server_registration_start_result = ServerRegistration::<Default>::start(&server_setup, client_registration_start_result.message, b"alice@example.com")?;
 //! // During registration...
@@ -775,13 +775,13 @@
 //! #     type KeyExchange = opaque_ke::TripleDh<p256::NistP256, sha2::Sha256>;
 //! #     type Ksf = opaque_ke::ksf::Identity;
 //! # }
-//! # use rand::{rngs::OsRng, RngCore};
-//! # let mut client_rng = OsRng;
+//! # use rand::rngs::SysRng; use rand::rand_core::UnwrapErr;
+//! # let mut client_rng = UnwrapErr(SysRng);
 //! # let client_registration_start_result = ClientRegistration::<Default>::start(
 //! #     &mut client_rng,
 //! #     b"password",
 //! # )?;
-//! # let mut server_rng = OsRng;
+//! # let mut server_rng = UnwrapErr(SysRng);
 //! # let server_setup = ServerSetup::<Default>::new(&mut server_rng);
 //! # let server_registration_start_result = ServerRegistration::<Default>::start(&server_setup, client_registration_start_result.message, b"alice@example.com")?;
 //! let client_registration_finish_result = client_registration_start_result.state.finish(
@@ -821,13 +821,13 @@
 //! #     type KeyExchange = opaque_ke::TripleDh<p256::NistP256, sha2::Sha256>;
 //! #     type Ksf = opaque_ke::ksf::Identity;
 //! # }
-//! # use rand::{rngs::OsRng, RngCore};
-//! # let mut client_rng = OsRng;
+//! # use rand::rngs::SysRng; use rand::rand_core::UnwrapErr;
+//! # let mut client_rng = UnwrapErr(SysRng);
 //! # let client_registration_start_result = ClientRegistration::<Default>::start(
 //! #     &mut client_rng,
 //! #     b"password",
 //! # )?;
-//! # let mut server_rng = OsRng;
+//! # let mut server_rng = UnwrapErr(SysRng);
 //! # let server_setup = ServerSetup::<Default>::new(&mut server_rng);
 //! # let server_registration_start_result = ServerRegistration::<Default>::start(&server_setup, client_registration_start_result.message, b"alice@example.com")?;
 //! # let client_registration_finish_result = client_registration_start_result.state.finish(&mut client_rng, b"password", server_registration_start_result.message, ClientRegistrationFinishParameters::new(Identifiers { client: Some(b"Alice_the_Cryptographer"), server: Some(b"Facebook") }, None))?;
@@ -838,7 +838,7 @@
 //! # )?;
 //! # use opaque_ke::{ServerLogin, ServerLoginParameters};
 //! # let password_file = ServerRegistration::<Default>::deserialize(&password_file_bytes)?;
-//! # let mut server_rng = OsRng;
+//! # let mut server_rng = UnwrapErr(SysRng);
 //! let server_login_start_result = ServerLogin::start(
 //!     &mut server_rng,
 //!     &server_setup,
@@ -878,13 +878,13 @@
 //! #     type KeyExchange = opaque_ke::TripleDh<p256::NistP256, sha2::Sha256>;
 //! #     type Ksf = opaque_ke::ksf::Identity;
 //! # }
-//! # use rand::{rngs::OsRng, RngCore};
-//! # let mut client_rng = OsRng;
+//! # use rand::rngs::SysRng; use rand::rand_core::UnwrapErr;
+//! # let mut client_rng = UnwrapErr(SysRng);
 //! # let client_registration_start_result = ClientRegistration::<Default>::start(
 //! #     &mut client_rng,
 //! #     b"password",
 //! # )?;
-//! # let mut server_rng = OsRng;
+//! # let mut server_rng = UnwrapErr(SysRng);
 //! # let server_setup = ServerSetup::<Default>::new(&mut server_rng);
 //! # let server_registration_start_result = ServerRegistration::<Default>::start(&server_setup, client_registration_start_result.message, b"alice@example.com")?;
 //! # let client_registration_finish_result = client_registration_start_result.state.finish(&mut client_rng, b"password", server_registration_start_result.message, ClientRegistrationFinishParameters::new(Identifiers { client: Some(b"Alice_the_Cryptographer"), server: Some(b"Facebook") }, None))?;
@@ -937,13 +937,13 @@
 //! #     type KeyExchange = opaque_ke::TripleDh<p256::NistP256, sha2::Sha256>;
 //! #     type Ksf = opaque_ke::ksf::Identity;
 //! # }
-//! # use rand::{rngs::OsRng, RngCore};
-//! # let mut client_rng = OsRng;
+//! # use rand::rngs::SysRng; use rand::rand_core::UnwrapErr;
+//! # let mut client_rng = UnwrapErr(SysRng);
 //! # let client_registration_start_result = ClientRegistration::<Default>::start(
 //! #     &mut client_rng,
 //! #     b"password",
 //! # )?;
-//! # let mut server_rng = OsRng;
+//! # let mut server_rng = UnwrapErr(SysRng);
 //! # let server_setup = ServerSetup::<Default>::new(&mut server_rng);
 //! # let server_registration_start_result = ServerRegistration::<Default>::start(&server_setup, client_registration_start_result.message, b"alice@example.com")?;
 //! # let client_registration_finish_result = client_registration_start_result.state.finish(&mut client_rng, b"password", server_registration_start_result.message, ClientRegistrationFinishParameters::new(Identifiers { client: Some(b"Alice_the_Cryptographer"), server: Some(b"Facebook") }, None))?;
@@ -1007,9 +1007,10 @@
 //! in an HSM or vault) can do so with [`ServerLogin::builder()`] without
 //! exposing the bytes of the private key to this library.
 //! ```
-//! # use generic_array::{GenericArray, typenum::U0};
+//! # use opaque_ke::hybrid_array::{Array, typenum::U0};
 //! # use opaque_ke::{CipherSuite, ClientLogin, ClientRegistration, ClientRegistrationFinishParameters, ServerRegistration, keypair::{PrivateKey, PublicKey}, key_exchange::{KeyExchange, group::Group, tripledh::DiffieHellman}};
-//! # use rand::rngs::OsRng;
+//! # use rand::rngs::SysRng;
+//! # use rand::rand_core::UnwrapErr;
 //! # type Ristretto255 = <<Default as CipherSuite>::KeyExchange as KeyExchange>::Group;
 //! # struct Default;
 //! # #[cfg(feature = "ristretto255")]
@@ -1030,7 +1031,7 @@
 //! # #[derive(Clone)]
 //! # struct YourRemoteKey(<Ristretto255 as Group>::Sk);
 //! # impl YourRemoteKey {
-//! #     fn diffie_hellman(&self, pk: &PublicKey<Ristretto255>) -> Result<GenericArray<u8, <Ristretto255 as Group>::PkLen>, YourRemoteKeyError> {
+//! #     fn diffie_hellman(&self, pk: &PublicKey<Ristretto255>) -> Result<Array<u8, <Ristretto255 as Group>::PkLen>, YourRemoteKeyError> {
 //! #         Ok(<<Ristretto255 as Group>::Sk as DiffieHellman<Ristretto255>>::diffie_hellman(&self.0, pk.to_group_type()))
 //! #     }
 //! # }
@@ -1043,7 +1044,7 @@
 //!     type Error = YourRemoteKeyError;
 //!     type Len = U0;
 //!
-//!     fn serialize_key_pair(_: &KeyPair<Ristretto255, Self>) -> GenericArray<u8, Self::Len> {
+//!     fn serialize_key_pair(_: &KeyPair<Ristretto255, Self>) -> Array<u8, Self::Len> {
 //!         unimplemented!()
 //!     }
 //!
@@ -1052,24 +1053,25 @@
 //!     }
 //! }
 //!
-//! # let sk = Ristretto255::random_sk(&mut OsRng);
+//! # let mut rng = UnwrapErr(SysRng);
+//! # let sk = Ristretto255::random_sk(&mut rng);
 //! # let pk = Ristretto255::public_key(&sk);
 //! # let pk = Ristretto255::serialize_pk(&pk);
 //! # let public_key = PublicKey::deserialize(&pk).unwrap();
 //! # let remote_key = YourRemoteKey(sk);
-//! # let mut server_rng = OsRng;
+//! # let mut server_rng = UnwrapErr(SysRng);
 //! let keypair = KeyPair::new(remote_key, public_key);
 //! let server_setup = ServerSetup::<Default, YourRemoteKey>::new_with_key_pair(&mut server_rng, keypair);
 //!
 //! # let client_registration_start_result = ClientRegistration::<Default>::start(
-//! #     &mut OsRng,
+//! #     &mut rng,
 //! #     b"password",
 //! # )?;
 //! # let server_registration_start_result = ServerRegistration::<Default>::start(&server_setup, client_registration_start_result.message, b"alice@example.com")?;
-//! # let client_registration_finish_result = client_registration_start_result.state.finish(&mut OsRng, b"password", server_registration_start_result.message, ClientRegistrationFinishParameters::default())?;
+//! # let client_registration_finish_result = client_registration_start_result.state.finish(&mut rng, b"password", server_registration_start_result.message, ClientRegistrationFinishParameters::default())?;
 //! # let password_file_bytes = ServerRegistration::<Default>::finish(client_registration_finish_result.message).serialize();
 //! # let client_login_start_result = ClientLogin::<Default>::start(
-//! #   &mut OsRng,
+//! #   &mut rng,
 //! #   b"password",
 //! # )?;
 //! # let password_file = ServerRegistration::<Default>::deserialize(&password_file_bytes)?;
@@ -1100,11 +1102,11 @@
 //! [`ServerSetup::key_material_info()`].
 //! ```
 //! # use digest::Output;
-//! # use generic_array::{GenericArray, typenum::U0};
+//! # use opaque_ke::hybrid_array::{Array, typenum::U0};
 //! # use hkdf::Hkdf;
 //! # use opaque_ke::{CipherSuite, ClientLogin, ClientRegistration, ClientRegistrationFinishParameters, keypair::{PrivateKey, PublicKey}, key_exchange::{KeyExchange, group::Group, tripledh::DiffieHellman}};
-//! # use rand::rngs::OsRng;
-//! # use rand::RngCore;
+//! # use rand::rngs::SysRng;
+//! # use rand::{Rng, rand_core::UnwrapErr};
 //! # type Ristretto255 = <<Default as CipherSuite>::KeyExchange as KeyExchange>::Group;
 //! # type Hash = <<Default as CipherSuite>::KeyExchange as KeyExchange>::Hash;
 //! # type OprfGroup = <<Default as CipherSuite>::OprfCs as voprf::CipherSuite>::Group;
@@ -1127,8 +1129,8 @@
 //! # #[derive(Clone)]
 //! # struct YourRemoteSeed(Output<Hash>);
 //! # impl YourRemoteSeed {
-//! #     fn hkdf(&self, info: &[&[u8]]) -> GenericArray<u8, <OprfGroup as voprf::Group>::ScalarLen> {
-//! #         let mut ikm = GenericArray::default();
+//! #     fn hkdf(&self, info: &[&[u8]]) -> Array<u8, <OprfGroup as voprf::Group>::ScalarLen> {
+//! #         let mut ikm = Array::default();
 //! #         Hkdf::<Hash>::from_prk(&self.0)
 //! #             .unwrap()
 //! #             .expand_multi_info(info, &mut ikm)
@@ -1139,7 +1141,7 @@
 //! # #[derive(Clone)]
 //! # struct YourRemoteKey(<Ristretto255 as Group>::Sk);
 //! # impl YourRemoteKey {
-//! #     fn diffie_hellman(&self, pk: &PublicKey<Ristretto255>) -> Result<GenericArray<u8, <Ristretto255 as Group>::PkLen>, YourRemoteSecretsError> {
+//! #     fn diffie_hellman(&self, pk: &PublicKey<Ristretto255>) -> Result<Array<u8, <Ristretto255 as Group>::PkLen>, YourRemoteSecretsError> {
 //! #         Ok(<<Ristretto255 as Group>::Sk as DiffieHellman<Ristretto255>>::diffie_hellman(&self.0, pk.to_group_type()))
 //! #     }
 //! # }
@@ -1151,7 +1153,7 @@
 //! impl OprfSeedSerialization<sha2::Sha512, YourRemoteSecretsError> for YourRemoteSeed {
 //!     type Len = U0;
 //!
-//!     fn serialize(&self) -> GenericArray<u8, Self::Len> {
+//!     fn serialize(&self) -> Array<u8, Self::Len> {
 //!         unimplemented!()
 //!     }
 //!
@@ -1160,20 +1162,21 @@
 //!     }
 //! }
 //!
-//! # let mut oprf_seed = YourRemoteSeed(GenericArray::default());
-//! # OsRng.fill_bytes(&mut oprf_seed.0);
-//! # let sk = Ristretto255::random_sk(&mut OsRng);
+//! # let mut rng = UnwrapErr(SysRng);
+//! # let mut oprf_seed = YourRemoteSeed(Array::default());
+//! # rng.fill_bytes(&mut oprf_seed.0);
+//! # let sk = Ristretto255::random_sk(&mut rng);
 //! # let pk = Ristretto255::public_key(&sk);
 //! # let pk = Ristretto255::serialize_pk(&pk);
 //! # let public_key = PublicKey::deserialize(&pk).unwrap();
 //! # let remote_key = YourRemoteKey(sk);
-//! # let mut server_rng = OsRng;
+//! # let mut server_rng = UnwrapErr(SysRng);
 //! let keypair = KeyPair::new(remote_key, public_key);
 //! let server_setup = ServerSetup::<Default, YourRemoteKey, YourRemoteSeed>::new_with_key_pair_and_seed(&mut server_rng, keypair, oprf_seed);
 //!
 //! // Incoming registration ...
 //! # let client_registration_start_result = ClientRegistration::<Default>::start(
-//! #     &mut OsRng,
+//! #     &mut rng,
 //! #     b"password",
 //! # )?;
 //!
@@ -1189,12 +1192,12 @@
 //! )?;
 //!
 //! // Finish registration ...
-//! # let client_registration_finish_result = client_registration_start_result.state.finish(&mut OsRng, b"password", server_registration_start_result.message, ClientRegistrationFinishParameters::default())?;
+//! # let client_registration_finish_result = client_registration_start_result.state.finish(&mut rng, b"password", server_registration_start_result.message, ClientRegistrationFinishParameters::default())?;
 //!
 //! // Incoming login ...
 //! # let password_file_bytes = ServerRegistration::<Default>::finish(client_registration_finish_result.message).serialize();
 //! # let client_login_start_result = ClientLogin::<Default>::start(
-//! #   &mut OsRng,
+//! #   &mut rng,
 //! #   b"password",
 //! # )?;
 //! # let password_file = ServerRegistration::<Default>::deserialize(&password_file_bytes)?;
@@ -1230,7 +1233,7 @@
 //! use it with `opaque-ke`. `scrypt` is used for this example, but any KSF
 //! can be used.
 //! ```
-//! # use generic_array::GenericArray;
+//! use opaque_ke::hybrid_array::{Array, ArraySize};
 //! use opaque_ke::ksf::Ksf;
 //!
 //! #[derive(Default)]
@@ -1238,11 +1241,11 @@
 //!
 //! // The Ksf trait must be implemented to be used in the ciphersuite.
 //! impl Ksf for CustomKsf {
-//!     fn hash<L: generic_array::ArrayLength<u8>>(
+//!     fn hash<L: ArraySize>(
 //!         &self,
-//!         input: GenericArray<u8, L>,
-//!     ) -> Result<GenericArray<u8, L>, opaque_ke::errors::InternalError> {
-//!         let mut output = GenericArray::<u8, L>::default();
+//!         input: Array<u8, L>,
+//!     ) -> Result<Array<u8, L>, opaque_ke::errors::InternalError> {
+//!         let mut output = Array::<u8, L>::default();
 //!         scrypt::scrypt(&input, &[], &self.0, &mut output)
 //!             .map_err(|_| opaque_ke::errors::InternalError::KsfError)?;
 //!
@@ -1260,8 +1263,8 @@
 //! # use opaque_ke::ClientRegistrationFinishParameters;
 //! # use opaque_ke::ServerSetup;
 //! # use opaque_ke::errors::ProtocolError;
-//! # use rand::rngs::OsRng;
-//! # use rand::RngCore;
+//! # use rand::rngs::SysRng;
+//! # use rand::rand_core::UnwrapErr;
 //! # use std::default::Default;
 //! # #[cfg(feature = "argon2")]
 //! # {
@@ -1280,9 +1283,9 @@
 //! # }
 //! #
 //! # let password = b"password";
-//! # let mut rng = OsRng;
+//! # let mut rng = UnwrapErr(SysRng);
 //! # let server_setup = ServerSetup::<DefaultCipherSuite>::new(&mut rng);
-//! # let mut client_rng = OsRng;
+//! # let mut client_rng = UnwrapErr(SysRng);
 //! # let client_registration_start_result =
 //! #     ClientRegistration::<DefaultCipherSuite>::start(&mut client_rng, password)?;
 //! # use opaque_ke::ServerRegistration;
@@ -1356,7 +1359,7 @@
 #![no_std]
 #![cfg_attr(docsrs, feature(doc_cfg))]
 #![cfg_attr(not(test), deny(unsafe_code))]
-#![warn(clippy::cargo, clippy::doc_markdown, missing_docs, rustdoc::all)]
+#![warn(clippy::doc_markdown, missing_docs, rustdoc::all)]
 #![cfg_attr(not(test), warn(unused_crate_dependencies))]
 #![allow(clippy::multiple_crate_versions, type_alias_bounds)]
 
@@ -1384,6 +1387,7 @@ mod tests;
 #[cfg(feature = "argon2")]
 pub use argon2;
 pub use generic_array;
+pub use hybrid_array;
 #[cfg(feature = "kem")]
 pub use ml_kem;
 pub use rand;

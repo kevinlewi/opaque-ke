@@ -14,7 +14,7 @@ use std::sync::{LazyLock, Mutex};
 use std::vec::Vec;
 
 #[cfg(feature = "ecdsa")]
-use ::ecdsa::SignatureSize;
+use ::ecdsa::{EcdsaCurve, SignatureSize};
 use cryptoki::context::{CInitializeArgs, CInitializeFlags, Pkcs11};
 use cryptoki::mechanism::Mechanism;
 use cryptoki::mechanism::elliptic_curve::{EcKdf, Ecdh1DeriveParams};
@@ -24,18 +24,16 @@ use cryptoki::types::AuthPin;
 #[cfg(feature = "ecdsa")]
 use digest::Digest;
 use digest::OutputSizeUser;
-#[cfg(feature = "ecdsa")]
-use elliptic_curve::PrimeCurve;
 use elliptic_curve::group::Curve;
 use elliptic_curve::group::prime::PrimeCurveAffine;
 use elliptic_curve::pkcs8::der::asn1::{OctetString, OctetStringRef};
 use elliptic_curve::pkcs8::der::{Decode, Encode};
 use elliptic_curve::pkcs8::{AssociatedOid, ObjectIdentifier};
 use elliptic_curve::point::{AffineCoordinates, DecompressPoint};
-use elliptic_curve::sec1::{FromEncodedPoint, ModulusSize, Tag, ToEncodedPoint};
+use elliptic_curve::sec1::{FromSec1Point, ModulusSize, Tag, ToSec1Point};
 use elliptic_curve::{AffinePoint, CurveArithmetic, FieldBytesSize, Group as _, ProjectivePoint};
-use generic_array::typenum::Unsigned;
-use generic_array::{ArrayLength, GenericArray};
+use hybrid_array::typenum::Unsigned;
+use hybrid_array::{Array, ArraySize};
 use opaque_ke::key_exchange::KeyExchange;
 use opaque_ke::key_exchange::group::Group;
 #[cfg(all(feature = "ristretto255", feature = "ed25519"))]
@@ -60,7 +58,8 @@ use opaque_ke::{Curve25519, Ristretto255};
 use p256::NistP256;
 use p384::NistP384;
 use p521::NistP521;
-use rand::rngs::OsRng;
+use rand::rand_core::UnwrapErr;
+use rand::rngs::SysRng;
 use sha2::{Sha256, Sha384, Sha512};
 use subtle::{Choice, ConditionallySelectable, ConstantTimeEq};
 
@@ -231,14 +230,15 @@ fn test<CS: 'static + CipherSuite>(
 
     let keypair = KeyPair::new(RemoteKey(remote_key), pk);
     let oprf_seed = pkcs11_generate_oprf_seed(<OprfHash<CS> as OutputSizeUser>::OutputSize::U64);
-    let server_setup = ServerSetup::new_with_key_pair_and_seed(&mut OsRng, keypair, oprf_seed);
+    let server_setup =
+        ServerSetup::new_with_key_pair_and_seed(&mut UnwrapErr(SysRng), keypair, oprf_seed);
 
     const PASSWORD: &str = "password";
 
     let ClientRegistrationStartResult {
         message,
         state: client,
-    } = ClientRegistration::<CS>::start(&mut OsRng, PASSWORD.as_bytes()).unwrap();
+    } = ClientRegistration::<CS>::start(&mut UnwrapErr(SysRng), PASSWORD.as_bytes()).unwrap();
     let key_material_info = server_setup.key_material_info(&[]);
     let key_material = pkcs11_hkdf::<CS>(
         key_material_info.ikm,
@@ -250,7 +250,7 @@ fn test<CS: 'static + CipherSuite>(
         .message;
     let message = client
         .finish(
-            &mut OsRng,
+            &mut UnwrapErr(SysRng),
             PASSWORD.as_bytes(),
             message,
             ClientRegistrationFinishParameters::default(),
@@ -262,7 +262,7 @@ fn test<CS: 'static + CipherSuite>(
     let ClientLoginStartResult {
         message,
         state: client,
-    } = ClientLogin::<CS>::start(&mut OsRng, PASSWORD.as_bytes()).unwrap();
+    } = ClientLogin::<CS>::start(&mut UnwrapErr(SysRng), PASSWORD.as_bytes()).unwrap();
     let key_material_info = server_setup.key_material_info(&[]);
     let key_material = pkcs11_hkdf::<CS>(
         key_material_info.ikm,
@@ -270,7 +270,7 @@ fn test<CS: 'static + CipherSuite>(
         Vec::from_iter(key_material_info.info.into_iter().flatten().copied()),
     );
     let builder = ServerLogin::builder_with_key_material(
-        &mut OsRng,
+        &mut UnwrapErr(SysRng),
         &server_setup,
         key_material,
         Some(file),
@@ -291,7 +291,7 @@ fn test<CS: 'static + CipherSuite>(
     let message = client
         .clone()
         .finish(
-            &mut OsRng,
+            &mut UnwrapErr(SysRng),
             PASSWORD.as_bytes(),
             message,
             ClientLoginFinishParameters::default(),
@@ -384,8 +384,8 @@ fn pkcs11_hkdf<CS: CipherSuite>(
     hmac: ObjectHandle,
     mechanism: &Mechanism,
     info: Vec<u8>,
-) -> GenericArray<u8, <OprfGroup<CS> as voprf::Group>::ScalarLen> {
-    let mut okm = GenericArray::default();
+) -> Array<u8, <OprfGroup<CS> as voprf::Group>::ScalarLen> {
+    let mut okm = Array::default();
     let mut prev: Option<Vec<u8>> = None;
     let chunk_len = <OprfHash<CS> as OutputSizeUser>::OutputSize::USIZE;
 
@@ -450,7 +450,7 @@ impl Pkcs11KeyExchange<TripleDh<NistP256, Sha256>> for RemoteKey {
         &self,
         server_pk: &PublicKey<NistP256>,
         client_pk: &PublicKey<NistP256>,
-    ) -> GenericArray<u8, <NistP256 as Group>::PkLen> {
+    ) -> Array<u8, <NistP256 as Group>::PkLen> {
         pkcs_11_ecdsa_derive_secret::<NistP256>(self.0, server_pk, client_pk)
     }
 }
@@ -460,7 +460,7 @@ impl Pkcs11KeyExchange<TripleDh<NistP384, Sha384>> for RemoteKey {
         &self,
         server_pk: &PublicKey<NistP384>,
         client_pk: &PublicKey<NistP384>,
-    ) -> GenericArray<u8, <NistP384 as Group>::PkLen> {
+    ) -> Array<u8, <NistP384 as Group>::PkLen> {
         pkcs_11_ecdsa_derive_secret::<NistP384>(self.0, server_pk, client_pk)
     }
 }
@@ -470,7 +470,7 @@ impl Pkcs11KeyExchange<TripleDh<NistP521, Sha512>> for RemoteKey {
         &self,
         server_pk: &PublicKey<NistP521>,
         client_pk: &PublicKey<NistP521>,
-    ) -> GenericArray<u8, <NistP521 as Group>::PkLen> {
+    ) -> Array<u8, <NistP521 as Group>::PkLen> {
         pkcs_11_ecdsa_derive_secret::<NistP521>(self.0, server_pk, client_pk)
     }
 }
@@ -481,10 +481,10 @@ impl Pkcs11KeyExchange<TripleDh<Curve25519, Sha512>> for RemoteKey {
         &self,
         _: &PublicKey<Curve25519>,
         pk: &PublicKey<Curve25519>,
-    ) -> GenericArray<u8, <Curve25519 as Group>::PkLen> {
+    ) -> Array<u8, <Curve25519 as Group>::PkLen> {
         let shared_secret = pkcs_11_dh_derive_secret(self.0, &pk.serialize());
 
-        GenericArray::clone_from_slice(&shared_secret)
+        Array::try_from(shared_secret.as_slice()).unwrap()
     }
 }
 
@@ -526,12 +526,12 @@ where
     G: Group<Pk = NonIdentity<G>> + CurveArithmetic,
     FieldBytesSize<G>: ModulusSize,
     AffinePoint<G>:
-        FromEncodedPoint<G> + ToEncodedPoint<G> + PrimeCurveAffine<Curve = ProjectivePoint<G>>,
+        FromSec1Point<G> + ToSec1Point<G> + PrimeCurveAffine<Curve = ProjectivePoint<G>>,
 {
     PublicKey::deserialize(
         elliptic_curve::PublicKey::<G>::from_sec1_bytes(data)
             .unwrap()
-            .to_encoded_point(true)
+            .to_sec1_point(true)
             .as_bytes(),
     )
     .unwrap()
@@ -569,10 +569,10 @@ fn pkcs_11_ecdsa_derive_secret<G>(
     server_sk: ObjectHandle,
     server_pk: &PublicKey<G>,
     client_pk: &PublicKey<G>,
-) -> GenericArray<u8, <G as Group>::PkLen>
+) -> Array<u8, <G as Group>::PkLen>
 where
     G: Group<Pk = NonIdentity<G>> + CurveArithmetic,
-    AffinePoint<G>: DecompressPoint<G> + ToEncodedPoint<G>,
+    AffinePoint<G>: DecompressPoint<G> + ToSec1Point<G>,
     FieldBytesSize<G>: ModulusSize,
 {
     let client_pk_point = client_pk.to_group_type();
@@ -582,15 +582,15 @@ where
 
     let shared_secret_bytes = pkcs_11_dh_derive_secret(server_sk, &client_pk);
     let shared_secret_point = AffinePoint::<G>::decompress(
-        &GenericArray::clone_from_slice(&shared_secret_bytes),
+        &Array::try_from(shared_secret_bytes.as_slice()).unwrap(),
         Choice::from(0),
     )
     .unwrap();
-    let mut shared_secret = GenericArray::default();
+    let mut shared_secret = Array::default();
     shared_secret[1..].copy_from_slice(&shared_secret_bytes);
 
     let shifted_client_pk = client_pk_point.0.to_point() + ProjectivePoint::<G>::generator();
-    let shifted_client_pk = shifted_client_pk.to_affine().to_encoded_point(true);
+    let shifted_client_pk = shifted_client_pk.to_affine().to_sec1_point(true);
     let shifted_client_pk = OctetStringRef::new(shifted_client_pk.as_bytes()).unwrap();
     let shifted_client_pk = shifted_client_pk.to_der().unwrap();
 
@@ -610,12 +610,12 @@ where
 }
 
 #[cfg(feature = "ecdsa")]
-fn pkcs_11_ecdsa_sign<G: CurveArithmetic + PrimeCurve, H: Clone + Digest>(
+fn pkcs_11_ecdsa_sign<G: CurveArithmetic + EcdsaCurve, H: Clone + Digest>(
     sk: ObjectHandle,
     hashes: HashOutput<H>,
 ) -> (ecdsa::Signature<G>, PreHash<H>)
 where
-    SignatureSize<G>: ArrayLength<u8>,
+    SignatureSize<G>: ArraySize + generic_array::ArrayLength,
 {
     let sign_pre_hash = hashes.sign.finalize();
 

@@ -9,6 +9,7 @@
 use derive_where::derive_where;
 use digest::{Output, OutputSizeUser};
 use generic_array::{ArrayLength, GenericArray};
+use hybrid_array::ArraySize;
 
 use crate::errors::ProtocolError;
 use crate::key_exchange::{Deserialize, Serialize};
@@ -16,7 +17,7 @@ use crate::serialization::SliceExt;
 
 /// Pre-hash of the message to be verified.
 #[derive_where(Clone, Debug, Eq, Hash, PartialEq, Zeroize)]
-#[derive_where(Copy; <H::OutputSize as ArrayLength<u8>>::ArrayType)]
+#[derive_where(Copy; <H::OutputSize as ArraySize>::ArrayType<u8>)]
 #[cfg_attr(
     feature = "serde",
     derive(serde::Deserialize, serde::Serialize),
@@ -30,10 +31,10 @@ impl<H: OutputSizeUser> Deserialize for PreHash<H> {
     }
 }
 
-impl<H: OutputSizeUser> Serialize for PreHash<H> {
+impl<H: OutputSizeUser<OutputSize: ArrayLength>> Serialize for PreHash<H> {
     type Len = H::OutputSize;
 
     fn serialize(&self) -> GenericArray<u8, Self::Len> {
-        self.0.clone()
+        GenericArray::from(self.0.clone())
     }
 }

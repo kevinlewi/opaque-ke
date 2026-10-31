@@ -9,14 +9,13 @@
 use core::ops::Add;
 
 use derive_where::derive_where;
-use digest::core_api::BlockSizeUser;
 use digest::{Digest, Mac, Output, OutputSizeUser, Update};
-use generic_array::sequence::Concat;
-use generic_array::typenum::{IsLess, Le, NonZero, Sum, U1, U2, U32, U256, Unsigned};
 use generic_array::{ArrayLength, GenericArray};
 use hkdf::{Hkdf, HkdfExtract};
-use hmac::Hmac;
-use rand::{CryptoRng, RngCore};
+use hmac::{Hmac, KeyInit};
+use hybrid_array::Array;
+use hybrid_array::typenum::{Sum, U1, U2, U32, Unsigned};
+use rand::CryptoRng;
 
 use super::{
     Deserialize, GenerateKe1Result, KeyExchange, Serialize, SerializedContext,
@@ -24,10 +23,10 @@ use super::{
 };
 use crate::ciphersuite::{CipherSuite, KeGroup, KeHash};
 use crate::errors::{InternalError, ProtocolError};
-use crate::hash::{Hash, OutputSize, ProxyHash};
+use crate::hash::{Hash, OutputSize};
 use crate::key_exchange::group::Group;
 use crate::keypair::{KeyPair, PrivateKey, PublicKey};
-use crate::serialization::{SliceExt, UpdateExt, i2osp};
+use crate::serialization::{SliceExt, UpdateExt, concat, i2osp};
 
 ///////////////
 // Constants //
@@ -51,7 +50,7 @@ static STR_OPAQUE: &[u8] = b"OPAQUE-";
 /// [`TripleDh`](crate::TripleDh) and [`SigmaI`](crate::SigmaI).
 pub trait DiffieHellman<G: Group> {
     /// Diffie-Hellman key exchange.
-    fn diffie_hellman(&self, pk: &G::Pk) -> GenericArray<u8, G::PkLen>;
+    fn diffie_hellman(&self, pk: &G::Pk) -> Array<u8, G::PkLen>;
 }
 
 /// The client state produced after the first key exchange message
@@ -67,7 +66,7 @@ pub trait DiffieHellman<G: Group> {
 #[derive_where(Debug, Eq, Hash, Ord, PartialEq, PartialOrd; G::Sk)]
 pub struct Ke1State<G: Group> {
     pub(super) client_e_sk: PrivateKey<G>,
-    pub(super) client_nonce: GenericArray<u8, NonceLen>,
+    pub(super) client_nonce: Array<u8, NonceLen>,
 }
 
 /// The first key exchange message
@@ -82,7 +81,7 @@ pub struct Ke1State<G: Group> {
 #[derive_where(Clone, ZeroizeOnDrop)]
 #[derive_where(Debug, Eq, Hash, Ord, PartialEq, PartialOrd; G::Pk)]
 pub struct Ke1Message<G: Group> {
-    pub(super) client_nonce: GenericArray<u8, NonceLen>,
+    pub(super) client_nonce: Array<u8, NonceLen>,
     #[derive_where(skip(Zeroize))]
     pub(super) client_e_pk: PublicKey<G>,
 }
@@ -105,17 +104,14 @@ pub(super) struct DerivedKeys<H: OutputSizeUser> {
 /// `TripleDh` and `TripleDhKem` builders need.
 pub(super) struct Ke2BuilderCommon<G: Group, H: Hash>
 where
-    H::Core: ProxyHash,
-    <H::Core as BlockSizeUser>::BlockSize: IsLess<U256>,
-    Le<<H::Core as BlockSizeUser>::BlockSize, U256>: NonZero,
     G::Sk: DiffieHellman<G>,
 {
-    pub(super) server_nonce: GenericArray<u8, NonceLen>,
+    pub(super) server_nonce: Array<u8, NonceLen>,
     pub(super) transcript_hasher: H,
     pub(super) client_e_pk: PublicKey<G>,
     pub(super) server_e_pk: PublicKey<G>,
-    pub(super) shared_secret_1: GenericArray<u8, G::PkLen>,
-    pub(super) shared_secret_3: GenericArray<u8, G::PkLen>,
+    pub(super) shared_secret_1: Array<u8, G::PkLen>,
+    pub(super) shared_secret_3: Array<u8, G::PkLen>,
 }
 
 ////////////////////////////////////////////////
@@ -126,7 +122,7 @@ where
 // Helper functions
 
 pub(super) fn generate_ke1<
-    R: RngCore + CryptoRng,
+    R: CryptoRng,
     KE: KeyExchange<KE1State = Ke1State<G>, KE1Message = Ke1Message<G>>,
     G: Group,
 >(
@@ -150,8 +146,8 @@ pub(super) fn generate_ke1<
 }
 
 // Generate a random nonce up to NonceLen::USIZE bytes.
-pub(super) fn generate_nonce<R: RngCore + CryptoRng>(rng: &mut R) -> GenericArray<u8, NonceLen> {
-    let mut nonce_bytes = GenericArray::default();
+pub(super) fn generate_nonce<R: CryptoRng>(rng: &mut R) -> Array<u8, NonceLen> {
+    let mut nonce_bytes = Array::default();
     rng.fill_bytes(&mut nonce_bytes);
     nonce_bytes
 }
@@ -162,8 +158,8 @@ pub(super) fn transcript<CS: CipherSuite, KE: Group>(
     credential_request: &SerializedCredentialRequest<CS>,
     ke1_message: &Ke1MessageIter<KE>,
     credential_response: &SerializedCredentialResponse<CS>,
-    server_nonce: GenericArray<u8, NonceLen>,
-    server_e_pk: &GenericArray<u8, KE::PkLen>,
+    server_nonce: Array<u8, NonceLen>,
+    server_e_pk: &Array<u8, KE::PkLen>,
 ) -> KeHash<CS> {
     KeHash::<CS>::new()
         .chain_iter(context.iter())
@@ -190,11 +186,8 @@ pub(super) fn ke2_builder_common<'a, G, H, CS, R>(
 where
     G: Group,
     H: Hash,
-    R: RngCore + CryptoRng,
+    R: CryptoRng,
     CS: CipherSuite,
-    H::Core: ProxyHash,
-    <H::Core as BlockSizeUser>::BlockSize: IsLess<U256>,
-    Le<<H::Core as BlockSizeUser>::BlockSize, U256>: NonZero,
     G::Sk: DiffieHellman<G>,
     CS::KeyExchange: KeyExchange<Group = G, Hash = H>,
 {
@@ -235,12 +228,7 @@ where
 pub(super) fn derive_keys<'a, H: Hash>(
     ikms: impl Iterator<Item = &'a [u8]>,
     hashed_derivation_transcript: &[u8],
-) -> Result<DerivedKeys<H>, ProtocolError>
-where
-    H::Core: ProxyHash,
-    <H::Core as BlockSizeUser>::BlockSize: IsLess<U256>,
-    Le<<H::Core as BlockSizeUser>::BlockSize, U256>: NonZero,
-{
+) -> Result<DerivedKeys<H>, ProtocolError> {
     let mut hkdf = HkdfExtract::<H>::new(None);
 
     for ikm in ikms {
@@ -277,18 +265,13 @@ pub(super) fn compute_ke2_macs<H: Hash>(
     transcript_hasher: &mut H,
     derived_keys: &DerivedKeys<H>,
     transcript_digest: &[u8],
-) -> Result<(Output<H>, Output<H>), ProtocolError>
-where
-    H::Core: ProxyHash,
-    <H::Core as BlockSizeUser>::BlockSize: IsLess<U256>,
-    Le<<H::Core as BlockSizeUser>::BlockSize, U256>: NonZero,
-{
+) -> Result<(Output<H>, Output<H>), ProtocolError> {
     let mut mac_hasher =
         Hmac::<H>::new_from_slice(&derived_keys.km2).map_err(|_| InternalError::HmacError)?;
     Mac::update(&mut mac_hasher, transcript_digest);
     let mac = mac_hasher.finalize().into_bytes();
 
-    transcript_hasher.update(&mac);
+    Digest::update(transcript_hasher, &mac);
     let finalized_transcript = transcript_hasher.clone().finalize();
 
     let mut expected_mac_hasher =
@@ -308,12 +291,7 @@ pub(super) fn finalize_ke3_transcript<'a, H: Hash>(
     transcript_hasher: &mut H,
     shared_secrets: impl Iterator<Item = &'a [u8]>,
     server_mac: &Output<H>,
-) -> Result<(DerivedKeys<H>, Output<H>), ProtocolError>
-where
-    H::Core: ProxyHash,
-    <H::Core as BlockSizeUser>::BlockSize: IsLess<U256>,
-    Le<<H::Core as BlockSizeUser>::BlockSize, U256>: NonZero,
-{
+) -> Result<(DerivedKeys<H>, Output<H>), ProtocolError> {
     let transcript_digest = transcript_hasher.clone().finalize();
     let derived_keys = derive_keys::<H>(shared_secrets, &transcript_digest)?;
     let mut server_mac_hasher =
@@ -323,7 +301,7 @@ where
         .verify(server_mac)
         .map_err(|_| ProtocolError::InvalidLoginError)?;
 
-    transcript_hasher.update(server_mac.as_slice());
+    Digest::update(transcript_hasher, server_mac.as_slice());
     let finalized_transcript = transcript_hasher.clone().finalize();
 
     let mut client_mac_hasher =
@@ -339,12 +317,7 @@ fn hkdf_expand_label<H: Hash>(
     secret: &[u8],
     label: &[u8],
     context: &[u8],
-) -> Result<Output<H>, ProtocolError>
-where
-    H::Core: ProxyHash,
-    <H::Core as BlockSizeUser>::BlockSize: IsLess<U256>,
-    Le<<H::Core as BlockSizeUser>::BlockSize, U256>: NonZero,
-{
+) -> Result<Output<H>, ProtocolError> {
     let h = Hkdf::<H>::from_prk(secret).map_err(|_| InternalError::HkdfError)?;
     hkdf_expand_label_extracted(&h, label, context)
 }
@@ -353,13 +326,8 @@ fn hkdf_expand_label_extracted<H: Hash>(
     hkdf: &Hkdf<H>,
     label: &[u8],
     context: &[u8],
-) -> Result<Output<H>, ProtocolError>
-where
-    H::Core: ProxyHash,
-    <H::Core as BlockSizeUser>::BlockSize: IsLess<U256>,
-    Le<<H::Core as BlockSizeUser>::BlockSize, U256>: NonZero,
-{
-    let mut okm = GenericArray::default();
+) -> Result<Output<H>, ProtocolError> {
+    let mut okm = Array::default();
 
     let length = i2osp::<U2>(OutputSize::<H>::USIZE)?;
     let label_length = i2osp::<U1>(STR_OPAQUE.len() + label.len())?;
@@ -383,12 +351,7 @@ fn derive_secrets<H: Hash>(
     hkdf: &Hkdf<H>,
     label: &[u8],
     hashed_derivation_transcript: &[u8],
-) -> Result<Output<H>, ProtocolError>
-where
-    H::Core: ProxyHash,
-    <H::Core as BlockSizeUser>::BlockSize: IsLess<U256>,
-    Le<<H::Core as BlockSizeUser>::BlockSize, U256>: NonZero,
-{
+) -> Result<Output<H>, ProtocolError> {
     hkdf_expand_label_extracted::<H>(hkdf, label, hashed_derivation_transcript)
 }
 
@@ -407,12 +370,12 @@ impl<G: Group> Serialize for Ke1State<G>
 where
     // Ke1State: KeSk + Nonce
     G::SkLen: Add<NonceLen>,
-    Sum<G::SkLen, NonceLen>: ArrayLength<u8>,
+    Sum<G::SkLen, NonceLen>: ArrayLength,
 {
     type Len = Sum<G::SkLen, NonceLen>;
 
     fn serialize(&self) -> GenericArray<u8, Self::Len> {
-        self.client_e_sk.serialize().concat(self.client_nonce)
+        concat(&[&self.client_e_sk.serialize(), &self.client_nonce])
     }
 }
 
@@ -429,12 +392,12 @@ impl<G: Group> Serialize for Ke1Message<G>
 where
     // Ke1Message: Nonce + KePk
     NonceLen: Add<G::PkLen>,
-    Sum<NonceLen, G::PkLen>: ArrayLength<u8>,
+    Sum<NonceLen, G::PkLen>: ArrayLength,
 {
     type Len = Sum<NonceLen, G::PkLen>;
 
     fn serialize(&self) -> GenericArray<u8, Self::Len> {
-        self.client_nonce.concat(self.client_e_pk.serialize())
+        concat(&[&self.client_nonce, &self.client_e_pk.serialize()])
     }
 }
 
@@ -454,8 +417,8 @@ impl<G: Group> Ke1Message<G> {
 )]
 #[derive_where(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, Zeroize)]
 pub(crate) struct Ke1MessageIter<G: Group> {
-    client_nonce: GenericArray<u8, NonceLen>,
-    client_e_pk: GenericArray<u8, G::PkLen>,
+    client_nonce: Array<u8, NonceLen>,
+    client_e_pk: Array<u8, G::PkLen>,
 }
 
 pub(crate) type Ke1MessageIterLen<G: Group> = Sum<NonceLen, G::PkLen>;
@@ -476,9 +439,9 @@ impl<G: Group> Ke1MessageIter<G> {
 impl<G: Group> Ke1MessageIter<G>
 where
     NonceLen: Add<G::PkLen>,
-    Ke1MessageIterLen<G>: ArrayLength<u8>,
+    Ke1MessageIterLen<G>: ArrayLength,
 {
     pub(crate) fn serialize(&self) -> GenericArray<u8, Ke1MessageIterLen<G>> {
-        self.client_nonce.concat(self.client_e_pk.clone())
+        concat(&[&self.client_nonce, &self.client_e_pk])
     }
 }

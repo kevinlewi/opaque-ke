@@ -16,8 +16,8 @@ pub mod elliptic_curve;
 #[cfg(feature = "ristretto255")]
 pub mod ristretto255;
 
-use generic_array::{ArrayLength, GenericArray};
-use rand::{CryptoRng, RngCore};
+use hybrid_array::{Array, ArraySize};
+use rand::CryptoRng;
 use zeroize::ZeroizeOnDrop;
 
 use crate::errors::{InternalError, ProtocolError};
@@ -29,14 +29,14 @@ pub trait Group {
     /// Public key
     type Pk: Clone;
     /// Length of the public key
-    type PkLen: ArrayLength<u8>;
+    type PkLen: ArraySize + generic_array::ArrayLength;
     /// Secret key
     type Sk: Clone + ZeroizeOnDrop;
     /// Length of the secret key
-    type SkLen: ArrayLength<u8>;
+    type SkLen: ArraySize + generic_array::ArrayLength;
 
     /// Serializes `self`
-    fn serialize_pk(pk: &Self::Pk) -> GenericArray<u8, Self::PkLen>;
+    fn serialize_pk(pk: &Self::Pk) -> Array<u8, Self::PkLen>;
 
     /// Return a public key from its fixed-length bytes representation
     ///
@@ -44,16 +44,16 @@ pub trait Group {
     fn deserialize_take_pk(bytes: &mut &[u8]) -> Result<Self::Pk, ProtocolError>;
 
     /// Generate a random secret key
-    fn random_sk<R: RngCore + CryptoRng>(rng: &mut R) -> Self::Sk;
+    fn random_sk<R: CryptoRng>(rng: &mut R) -> Self::Sk;
 
     /// Deterministically derive a [`Self::Sk`] from `seed`.
-    fn derive_scalar(seed: GenericArray<u8, Self::SkLen>) -> Result<Self::Sk, InternalError>;
+    fn derive_scalar(seed: Array<u8, Self::SkLen>) -> Result<Self::Sk, InternalError>;
 
     /// Return a public key from its secret key
     fn public_key(sk: &Self::Sk) -> Self::Pk;
 
     /// Serializes `self`
-    fn serialize_sk(sk: &Self::Sk) -> GenericArray<u8, Self::SkLen>;
+    fn serialize_sk(sk: &Self::Sk) -> Array<u8, Self::SkLen>;
 
     /// Return a public key from its fixed-length bytes representation
     ///

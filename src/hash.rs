@@ -8,60 +8,27 @@
 
 //! A convenience trait for digest bounds used throughout the library
 
-use digest::block_buffer::Eager;
-use digest::core_api::{BlockSizeUser, BufferKindUser, CoreProxy, FixedOutputCore};
-use digest::{FixedOutputReset, HashMarker, OutputSizeUser};
-use generic_array::typenum::{IsLess, Le, NonZero, U256};
+use digest::block_api::EagerHash;
+use digest::{FixedOutputReset, OutputSizeUser};
+use generic_array::ArrayLength;
 
-pub(crate) type OutputSize<H> = <<H as CoreProxy>::Core as OutputSizeUser>::OutputSize;
+pub(crate) type OutputSize<H> = <H as OutputSizeUser>::OutputSize;
 
-/// Trait to simplify requirements for [`Hash`].
-pub trait ProxyHash:
-    HashMarker + FixedOutputCore + BufferKindUser<BufferKind = Eager> + Default + Clone
-where
-    <Self as BlockSizeUser>::BlockSize: IsLess<U256>,
-    Le<<Self as BlockSizeUser>::BlockSize, U256>: NonZero,
-{
-}
-
-impl<T: HashMarker + FixedOutputCore + BufferKindUser<BufferKind = Eager> + Default + Clone>
-    ProxyHash for T
-where
-    <Self as BlockSizeUser>::BlockSize: IsLess<U256>,
-    Le<<Self as BlockSizeUser>::BlockSize, U256>: NonZero,
-{
-}
-
-/// Trait inheriting the requirements from [`digest::Digest`] for compatibility
-/// with HKDF and HMAC Associated types could be simplified when they are made
-/// as defaults: <https://github.com/rust-lang/rust/issues/29661>
+/// A hash usable for HKDF and HMAC: an eager block hash (which also bounds
+/// its block size below 256 bytes) with a resettable fixed output, whose
+/// block-level core produces the same output size as the hash itself.
 pub trait Hash:
-    Default
-    + HashMarker
-    + OutputSizeUser<OutputSize = OutputSize<Self>>
-    + BlockSizeUser
+    EagerHash<Core: OutputSizeUser<OutputSize = OutputSize<Self>>>
+    + OutputSizeUser<OutputSize: ArrayLength>
+    + Default
     + FixedOutputReset
-    + CoreProxy
-    + Clone
-where
-    <Self as CoreProxy>::Core: ProxyHash,
-    <<Self as CoreProxy>::Core as BlockSizeUser>::BlockSize: IsLess<U256>,
-    Le<<<Self as CoreProxy>::Core as BlockSizeUser>::BlockSize, U256>: NonZero,
 {
 }
 
-impl<
-    T: Default
-        + HashMarker
-        + OutputSizeUser<OutputSize = OutputSize<Self>>
-        + BlockSizeUser
+impl<T> Hash for T where
+    T: EagerHash<Core: OutputSizeUser<OutputSize = OutputSize<T>>>
+        + OutputSizeUser<OutputSize: ArrayLength>
+        + Default
         + FixedOutputReset
-        + CoreProxy
-        + Clone,
-> Hash for T
-where
-    <Self as CoreProxy>::Core: ProxyHash,
-    <<Self as CoreProxy>::Core as BlockSizeUser>::BlockSize: IsLess<U256>,
-    Le<<<Self as CoreProxy>::Core as BlockSizeUser>::BlockSize, U256>: NonZero,
 {
 }

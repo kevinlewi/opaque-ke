@@ -17,10 +17,9 @@ use digest::Digest;
 pub use ed25519_dalek;
 use ed25519_dalek::hazmat::ExpandedSecretKey;
 use ed25519_dalek::{SecretKey, Sha512};
-use generic_array::GenericArray;
-use generic_array::sequence::Concat;
-use generic_array::typenum::{U32, U64};
-use rand::{CryptoRng, RngCore};
+use hybrid_array::Array;
+use hybrid_array::typenum::{U32, U64};
+use rand::CryptoRng;
 use zeroize::{Zeroize, ZeroizeOnDrop};
 
 use super::Group;
@@ -41,24 +40,24 @@ impl Group for Ed25519 {
     type Sk = SigningKey;
     type SkLen = U32;
 
-    fn serialize_pk(pk: &Self::Pk) -> GenericArray<u8, Self::PkLen> {
+    fn serialize_pk(pk: &Self::Pk) -> Array<u8, Self::PkLen> {
         pk.compressed.0.into()
     }
 
     fn deserialize_take_pk(bytes: &mut &[u8]) -> Result<Self::Pk, ProtocolError> {
-        let bytes = bytes.take_array("public key")?;
+        let bytes = bytes.take_array::<U32>("public key")?;
 
         VerifyingKey::from_bytes(bytes.into())
     }
 
-    fn random_sk<R: RngCore + CryptoRng>(rng: &mut R) -> Self::Sk {
+    fn random_sk<R: CryptoRng>(rng: &mut R) -> Self::Sk {
         let mut sk = <[u8; 32]>::default();
         rng.fill_bytes(&mut sk);
 
         SigningKey::from_bytes(sk)
     }
 
-    fn derive_scalar(seed: GenericArray<u8, Self::SkLen>) -> Result<Self::Sk, InternalError> {
+    fn derive_scalar(seed: Array<u8, Self::SkLen>) -> Result<Self::Sk, InternalError> {
         Ok(SigningKey::from_bytes(seed.into()))
     }
 
@@ -66,13 +65,13 @@ impl Group for Ed25519 {
         sk.verifying_key
     }
 
-    fn serialize_sk(sk: &Self::Sk) -> GenericArray<u8, Self::SkLen> {
+    fn serialize_sk(sk: &Self::Sk) -> Array<u8, Self::SkLen> {
         sk.sk.into()
     }
 
     fn deserialize_take_sk(bytes: &mut &[u8]) -> Result<Self::Sk, ProtocolError> {
         Ok(SigningKey::from_bytes(
-            bytes.take_array("secret key")?.into(),
+            bytes.take_array::<U32>("secret key")?.into(),
         ))
     }
 }
@@ -108,7 +107,7 @@ impl PureEddsaImpl for Ed25519 {
         Signature::deserialize_take(bytes)
     }
 
-    fn serialize_signature(signature: &Self::Signature) -> GenericArray<u8, Self::SignatureLen> {
+    fn serialize_signature(signature: &Self::Signature) -> Array<u8, Self::SignatureLen> {
         signature.serialize()
     }
 }
@@ -144,7 +143,7 @@ impl HashEddsaImpl for Ed25519 {
         Signature::deserialize_take(bytes)
     }
 
-    fn serialize_signature(signature: &Self::Signature) -> GenericArray<u8, Self::SignatureLen> {
+    fn serialize_signature(signature: &Self::Signature) -> Array<u8, Self::SignatureLen> {
         signature.serialize()
     }
 }
@@ -407,17 +406,17 @@ impl Signature {
 
     fn deserialize_take(bytes: &mut &[u8]) -> Result<Self, ProtocolError> {
         #[allow(non_snake_case)]
-        let R = CompressedEdwardsY(bytes.take_array("signature R")?.into());
+        let R = CompressedEdwardsY(bytes.take_array::<U32>("signature R")?.into());
 
-        let s = Scalar::from_canonical_bytes(bytes.take_array("signature s")?.into())
+        let s = Scalar::from_canonical_bytes(bytes.take_array::<U32>("signature s")?.into())
             .into_option()
             .ok_or(ProtocolError::SerializationError)?;
 
         Ok(Self { R, s })
     }
 
-    fn serialize(&self) -> GenericArray<u8, U64> {
-        GenericArray::from(self.R.0).concat(GenericArray::from(self.s.to_bytes()))
+    fn serialize(&self) -> Array<u8, U64> {
+        Array::<u8, U32>::from(self.R.0).concat(Array::<u8, U32>::from(self.s.to_bytes()))
     }
 }
 
@@ -433,17 +432,17 @@ mod test {
     use std::iter;
 
     use ed25519_dalek::{Signer, SigningKey, Verifier, VerifyingKey};
-    use rand::rngs::OsRng;
+    use rand::Rng;
 
     use super::*;
 
     #[test]
     fn pure_eddsa() {
         let mut message = [0; 1024];
-        OsRng.fill_bytes(&mut message);
+        rand::rng().fill_bytes(&mut message);
 
         let mut sk = SecretKey::default();
-        OsRng.fill_bytes(&mut sk);
+        rand::rng().fill_bytes(&mut sk);
         let signing_key = SigningKey::from_bytes(&sk);
 
         let signature = signing_key.sign(&message);
@@ -472,12 +471,12 @@ mod test {
     #[test]
     fn hash_eddsa() {
         let mut message = [0; 1024];
-        OsRng.fill_bytes(&mut message);
+        rand::rng().fill_bytes(&mut message);
         let message = Sha512::new_with_prefix(message);
         let pre_hash = message.clone().finalize();
 
         let mut sk = SecretKey::default();
-        OsRng.fill_bytes(&mut sk);
+        rand::rng().fill_bytes(&mut sk);
         let signing_key = SigningKey::from_bytes(&sk);
 
         let signature = signing_key.sign_prehashed(message.clone(), None).unwrap();

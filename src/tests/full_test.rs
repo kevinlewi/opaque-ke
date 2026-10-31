@@ -19,7 +19,8 @@ use generic_array::{ArrayLength, GenericArray};
 #[cfg(feature = "kem")]
 use ml_kem::MlKem768;
 use rand::SeedableRng;
-use rand::rngs::OsRng;
+use rand::rand_core::UnwrapErr;
+use rand::rngs::SysRng;
 use rand_chacha::ChaCha20Rng;
 use serde_json::Value;
 use subtle::ConstantTimeEq;
@@ -521,37 +522,37 @@ where
     <CS::KeyExchange as KeyExchange>::KE3Message: Serialize,
     // ClientRegistration: KgSk + KgPk
     <OprfGroup<CS> as voprf::Group>::ScalarLen: Add<<OprfGroup<CS> as voprf::Group>::ElemLen>,
-    ClientRegistrationLen<CS>: ArrayLength<u8>,
+    ClientRegistrationLen<CS>: ArrayLength,
     // RegistrationResponse: KgPk + KePk
     <OprfGroup<CS> as voprf::Group>::ElemLen: Add<<KeGroup<CS> as Group>::PkLen>,
-    RegistrationResponseLen<CS>: ArrayLength<u8>,
+    RegistrationResponseLen<CS>: ArrayLength,
     // RegistrationUpload: (KePk + Hash) + Envelope
     <KeGroup<CS> as Group>::PkLen: Add<OutputSize<OprfHash<CS>>>,
     Sum<<KeGroup<CS> as Group>::PkLen, OutputSize<OprfHash<CS>>>:
-        ArrayLength<u8> + Add<EnvelopeLen<CS>>,
-    RegistrationUploadLen<CS>: ArrayLength<u8>,
+        ArrayLength + Add<EnvelopeLen<CS>>,
+    RegistrationUploadLen<CS>: ArrayLength,
     // ServerRegistration = RegistrationUpload
     // CredentialRequest: KgPk + Ke1Message
     <CS::KeyExchange as KeyExchange>::KE1Message: Serialize,
     <OprfGroup<CS> as voprf::Group>::ElemLen: Add<Ke1MessageLen<CS>>,
-    CredentialRequestLen<CS>: ArrayLength<u8>,
+    CredentialRequestLen<CS>: ArrayLength,
     // ClientLogin: KgSk + CredentialRequest + Ke1State
     <OprfGroup<CS> as voprf::Group>::ScalarLen: Add<CredentialRequestLen<CS>>,
     <CS::KeyExchange as KeyExchange>::KE1State: Serialize,
     Sum<<OprfGroup<CS> as voprf::Group>::ScalarLen, CredentialRequestLen<CS>>:
-        ArrayLength<u8> + Add<Ke1StateLen<CS>>,
-    ClientLoginLen<CS>: ArrayLength<u8>,
+        ArrayLength + Add<Ke1StateLen<CS>>,
+    ClientLoginLen<CS>: ArrayLength,
     // CredentialResponseWithoutKeLen: (KgPk + Nonce) + MaskedResponse
     <OprfGroup<CS> as voprf::Group>::ElemLen: Add<NonceLen>,
     Sum<<OprfGroup<CS> as voprf::Group>::ElemLen, NonceLen>:
-        ArrayLength<u8> + Add<MaskedResponseLen<CS>>,
-    CredentialResponseWithoutKeLen<CS>: ArrayLength<u8>,
+        ArrayLength + Add<MaskedResponseLen<CS>>,
+    CredentialResponseWithoutKeLen<CS>: ArrayLength,
     // CredentialResponse: CredentialResponseWithoutKeLen + Ke2Message
     <CS::KeyExchange as KeyExchange>::KE2Message: Serialize,
     CredentialResponseWithoutKeLen<CS>: Add<Ke2MessageLen<CS>>,
-    CredentialResponseLen<CS>: ArrayLength<u8>,
+    CredentialResponseLen<CS>: ArrayLength,
 {
-    use rand::RngCore;
+    use rand::Rng;
 
     use crate::keypair::KeyPair;
 
@@ -588,15 +589,15 @@ where
     let dummy_client_pk = dummy_client_pk.serialize();
     let server_setup = ServerSetup::<CS>::deserialize(
         &[
-            oprf_seed.as_ref(),
-            &server_s_kp.private().serialize(),
-            &dummy_client_pk,
+            oprf_seed.as_slice(),
+            server_s_kp.private().serialize().as_slice(),
+            dummy_client_pk.as_slice(),
         ]
         .concat(),
     )
     .unwrap();
 
-    let blinding_factor = <OprfGroup<CS> as voprf::Group>::random_scalar(&mut rng);
+    let blinding_factor = <OprfGroup<CS> as voprf::Group>::random_scalar(&mut rng)?;
     let blinding_factor_bytes = OprfGroup::<CS>::serialize_scalar(blinding_factor);
 
     let mut blinding_factor_registration_rng = CycleRng::new(blinding_factor_bytes.to_vec());
@@ -787,7 +788,7 @@ fn test_registration_request() -> Result<(), ProtocolError> {
     where
         // ClientRegistration: KgSk + KgPk
         <OprfGroup<CS> as voprf::Group>::ScalarLen: Add<<OprfGroup<CS> as voprf::Group>::ElemLen>,
-        ClientRegistrationLen<CS>: ArrayLength<u8>,
+        ClientRegistrationLen<CS>: ArrayLength,
     {
         let parameters = populate_test_vectors(&serde_json::from_str(test_vector).unwrap());
         let mut rng = CycleRng::new(parameters.blinding_factor.to_vec());
@@ -852,7 +853,7 @@ fn test_registration_response() -> Result<(), ProtocolError> {
     where
         // RegistrationResponse: KgPk + KePk
         <OprfGroup<CS> as voprf::Group>::ElemLen: Add<<KeGroup<CS> as Group>::PkLen>,
-        RegistrationResponseLen<CS>: ArrayLength<u8>,
+        RegistrationResponseLen<CS>: ArrayLength,
     {
         let parameters = populate_test_vectors(
             &serde_json::from_str(test_vector).map_err(|_| ProtocolError::SerializationError)?,
@@ -894,8 +895,8 @@ fn test_registration_upload() -> Result<(), ProtocolError> {
         // RegistrationUpload: (KePk + Hash) + Envelope
         <KeGroup<CS> as Group>::PkLen: Add<OutputSize<OprfHash<CS>>>,
         Sum<<KeGroup<CS> as Group>::PkLen, OutputSize<OprfHash<CS>>>:
-            ArrayLength<u8> + Add<EnvelopeLen<CS>>,
-        RegistrationUploadLen<CS>: ArrayLength<u8>,
+            ArrayLength + Add<EnvelopeLen<CS>>,
+        RegistrationUploadLen<CS>: ArrayLength,
     {
         let parameters = populate_test_vectors(
             &serde_json::from_str(test_vector).map_err(|_| ProtocolError::SerializationError)?,
@@ -945,8 +946,8 @@ fn test_password_file() -> Result<(), ProtocolError> {
         // RegistrationUpload: (KePk + Hash) + Envelope
         <KeGroup<CS> as Group>::PkLen: Add<OutputSize<OprfHash<CS>>>,
         Sum<<KeGroup<CS> as Group>::PkLen, OutputSize<OprfHash<CS>>>:
-            ArrayLength<u8> + Add<EnvelopeLen<CS>>,
-        RegistrationUploadLen<CS>: ArrayLength<u8>,
+            ArrayLength + Add<EnvelopeLen<CS>>,
+        RegistrationUploadLen<CS>: ArrayLength,
         // ServerRegistration = RegistrationUpload
     {
         let parameters = populate_test_vectors(&serde_json::from_str(test_vector).unwrap());
@@ -977,13 +978,13 @@ fn test_credential_request() -> Result<(), ProtocolError> {
         // CredentialRequest: KgPk + Ke1Message
         <CS::KeyExchange as KeyExchange>::KE1Message: Serialize,
         <OprfGroup<CS> as voprf::Group>::ElemLen: Add<Ke1MessageLen<CS>>,
-        CredentialRequestLen<CS>: ArrayLength<u8>,
+        CredentialRequestLen<CS>: ArrayLength,
         // ClientLogin: KgSk + CredentialRequest + Ke1State
         <OprfGroup<CS> as voprf::Group>::ScalarLen: Add<CredentialRequestLen<CS>>,
         <CS::KeyExchange as KeyExchange>::KE1State: Serialize,
         Sum<<OprfGroup<CS> as voprf::Group>::ScalarLen, CredentialRequestLen<CS>>:
-            ArrayLength<u8> + Add<Ke1StateLen<CS>>,
-        ClientLoginLen<CS>: ArrayLength<u8>,
+            ArrayLength + Add<Ke1StateLen<CS>>,
+        ClientLoginLen<CS>: ArrayLength,
     {
         let parameters = populate_test_vectors(&serde_json::from_str(test_vector).unwrap());
 
@@ -1024,12 +1025,12 @@ fn test_credential_response() -> Result<(), ProtocolError> {
         // CredentialResponseWithoutKeLen: (KgPk + Nonce) + MaskedResponse
         <OprfGroup<CS> as voprf::Group>::ElemLen: Add<NonceLen>,
         Sum<<OprfGroup<CS> as voprf::Group>::ElemLen, NonceLen>:
-            ArrayLength<u8> + Add<MaskedResponseLen<CS>>,
-        CredentialResponseWithoutKeLen<CS>: ArrayLength<u8>,
+            ArrayLength + Add<MaskedResponseLen<CS>>,
+        CredentialResponseWithoutKeLen<CS>: ArrayLength,
         // CredentialResponse: CredentialResponseWithoutKeLen + Ke2Message
         <CS::KeyExchange as KeyExchange>::KE2Message: Serialize,
         CredentialResponseWithoutKeLen<CS>: Add<Ke2MessageLen<CS>>,
-        CredentialResponseLen<CS>: ArrayLength<u8>,
+        CredentialResponseLen<CS>: ArrayLength,
     {
         let parameters = populate_test_vectors(&serde_json::from_str(test_vector).unwrap());
 
@@ -1182,8 +1183,8 @@ fn test_complete_flow<CS: CipherSuite>(
     login_password: &[u8],
 ) -> Result<(), ProtocolError> {
     let credential_identifier = b"credentialIdentifier";
-    let mut client_rng = OsRng;
-    let mut server_rng = OsRng;
+    let mut client_rng = UnwrapErr(SysRng);
+    let mut server_rng = UnwrapErr(SysRng);
     let server_setup = ServerSetup::<CS>::new(&mut server_rng);
     let client_registration_start_result =
         ClientRegistration::<CS>::start(&mut client_rng, registration_password)?;
@@ -1330,8 +1331,8 @@ fn test_reflected_value_error_registration() -> Result<(), ProtocolError> {
     fn inner<CS: CipherSuite>(_test_vector: &str) -> Result<(), ProtocolError> {
         let credential_identifier = b"credentialIdentifier";
         let password = b"password";
-        let mut client_rng = OsRng;
-        let mut server_rng = OsRng;
+        let mut client_rng = UnwrapErr(SysRng);
+        let mut server_rng = UnwrapErr(SysRng);
         let server_setup = ServerSetup::<CS>::new(&mut server_rng);
         let client_registration_start_result =
             ClientRegistration::<CS>::start(&mut client_rng, password)?;
@@ -1377,8 +1378,8 @@ fn test_reflected_value_error_login() -> Result<(), ProtocolError> {
     fn inner<CS: CipherSuite>(_test_vector: &str) -> Result<(), ProtocolError> {
         let credential_identifier = b"credentialIdentifier";
         let password = b"password";
-        let mut client_rng = OsRng;
-        let mut server_rng = OsRng;
+        let mut client_rng = UnwrapErr(SysRng);
+        let mut server_rng = UnwrapErr(SysRng);
         let server_setup = ServerSetup::<CS>::new(&mut server_rng);
         let client_registration_start_result =
             ClientRegistration::<CS>::start(&mut client_rng, password)?;

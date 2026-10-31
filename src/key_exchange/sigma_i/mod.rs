@@ -16,6 +16,8 @@ pub mod ecdsa;
 pub mod hash_eddsa;
 mod message;
 pub mod pure_eddsa;
+// The pre-hash verification state of the signature schemes that sign a digest.
+#[cfg(any(feature = "ecdsa", feature = "ed25519"))]
 pub(super) mod shared;
 
 use core::iter;
@@ -23,13 +25,12 @@ use core::marker::PhantomData;
 use core::ops::Add;
 
 use derive_where::derive_where;
-use digest::core_api::BlockSizeUser;
-use digest::{Digest, Mac, Output, OutputSizeUser};
-use generic_array::sequence::Concat;
-use generic_array::typenum::{IsLess, Le, NonZero, Sum, U256};
+use digest::{Mac, Output, OutputSizeUser};
 use generic_array::{ArrayLength, GenericArray};
-use hmac::Hmac;
-use rand::{CryptoRng, RngCore};
+use hmac::{Hmac, KeyInit};
+use hybrid_array::typenum::Sum;
+use hybrid_array::{Array, ArraySize};
+use rand::CryptoRng;
 use subtle::{ConstantTimeEq, CtOption};
 use zeroize::Zeroize;
 
@@ -43,13 +44,13 @@ use super::{
 use crate::ciphersuite::{CipherSuite, KeGroup, KeHash};
 use crate::envelope::NonceLen;
 use crate::errors::{InternalError, ProtocolError};
-use crate::hash::{Hash, OutputSize, ProxyHash};
+use crate::hash::{Hash, OutputSize};
 use crate::key_exchange::group::Group;
 pub use crate::key_exchange::shared::{DiffieHellman, Ke1Message, Ke1State};
 use crate::key_exchange::shared::{derive_keys, generate_ke1, generate_nonce, transcript};
 use crate::keypair::{KeyPair, PrivateKey, PublicKey};
 use crate::opaque::Identifiers;
-use crate::serialization::{SliceExt, UpdateExt};
+use crate::serialization::{SliceExt, UpdateExt, concat};
 
 /// The SIGMA-I key exchange implementation
 ///
@@ -95,7 +96,7 @@ pub trait SignatureProtocol {
     /// The signature.
     type Signature: Clone + Zeroize;
     /// Length of a serialized [`Signature`](Self::Signature).
-    type SignatureLen: ArrayLength<u8>;
+    type SignatureLen: ArraySize + ArrayLength;
     /// The state required to run the verification. This is used to cache the
     /// pre-hash for curves that support that, otherwise the [`Message`] to
     /// verify is stored via [`CachedMessage`].
@@ -111,7 +112,7 @@ pub trait SignatureProtocol {
     /// The returned [`VerifyState`](Self::VerifyState) will be passed to
     /// [`verify()`](Self::verify) and must contain the necessary
     /// information to verify the incoming signature.
-    fn sign<R: CryptoRng + RngCore, CS: CipherSuite, KE: Group>(
+    fn sign<R: CryptoRng, CS: CipherSuite, KE: Group>(
         sk: &<Self::Group as Group>::Sk,
         rng: &mut R,
         message: &Message<CS, KE>,
@@ -132,7 +133,7 @@ pub trait SignatureProtocol {
     ) -> Result<(), ProtocolError>;
 
     /// Serialize [`Signature`](Self::Signature) into a fixed-sized byte array.
-    fn serialize_signature(signature: &Self::Signature) -> GenericArray<u8, Self::SignatureLen>;
+    fn serialize_signature(signature: &Self::Signature) -> Array<u8, Self::SignatureLen>;
 
     /// Deserialize [`Signature`](Self::Signature) from the given `bytes`.
     ///
@@ -154,7 +155,7 @@ pub trait SignatureProtocol {
 #[derive_where(Debug, Eq, Hash, PartialEq; <KeGroup<CS> as Group>::Pk, KE::Pk)]
 pub struct Ke2Builder<'a, CS: CipherSuite, KE: Group> {
     transcript: Message<'a, CS, KE>,
-    server_nonce: GenericArray<u8, NonceLen>,
+    server_nonce: Array<u8, NonceLen>,
     #[derive_where(skip(Zeroize))]
     client_s_pk: PublicKey<KeGroup<CS>>,
     #[derive_where(skip(Zeroize))]
@@ -199,13 +200,8 @@ pub struct Ke2State<CS: CipherSuite, SIG: SignatureProtocol, KE: Group> {
 )]
 #[derive_where(Clone, ZeroizeOnDrop)]
 #[derive_where(Debug, Eq, Hash, Ord, PartialEq, PartialOrd; KE::Pk, SIG::Signature)]
-pub struct Ke2Message<SIG: SignatureProtocol, KE: Group, KEH: Hash>
-where
-    KEH::Core: ProxyHash,
-    <KEH::Core as BlockSizeUser>::BlockSize: IsLess<U256>,
-    Le<<KEH::Core as BlockSizeUser>::BlockSize, U256>: NonZero,
-{
-    server_nonce: GenericArray<u8, NonceLen>,
+pub struct Ke2Message<SIG: SignatureProtocol, KE: Group, KEH: Hash> {
+    server_nonce: Array<u8, NonceLen>,
     #[derive_where(skip(Zeroize))]
     server_e_pk: PublicKey<KE>,
     signature: SIG::Signature,
@@ -231,9 +227,6 @@ pub struct Ke3Message<SIG: SignatureProtocol, KEH: OutputSizeUser> {
 impl<SIG: SignatureProtocol, KE: 'static + Group, KEH: Hash> KeyExchange for SigmaI<SIG, KE, KEH>
 where
     KE::Sk: DiffieHellman<KE>,
-    KEH::Core: ProxyHash,
-    <KEH::Core as BlockSizeUser>::BlockSize: IsLess<U256>,
-    Le<<KEH::Core as BlockSizeUser>::BlockSize, U256>: NonZero,
 {
     type Group = SIG::Group;
     type Hash = KEH;
@@ -247,13 +240,11 @@ where
     type KE2Message = Ke2Message<SIG, KE, KEH>;
     type KE3Message = Ke3Message<SIG, KEH>;
 
-    fn generate_ke1<R: RngCore + CryptoRng>(
-        rng: &mut R,
-    ) -> Result<GenerateKe1Result<Self>, ProtocolError> {
+    fn generate_ke1<R: CryptoRng>(rng: &mut R) -> Result<GenerateKe1Result<Self>, ProtocolError> {
         generate_ke1(rng)
     }
 
-    fn ke2_builder<'a, CS: CipherSuite<KeyExchange = Self>, R: RngCore + CryptoRng>(
+    fn ke2_builder<'a, CS: CipherSuite<KeyExchange = Self>, R: CryptoRng>(
         rng: &mut R,
         credential_request: SerializedCredentialRequest<CS>,
         ke1_message: Self::KE1Message,
@@ -331,7 +322,7 @@ where
         &builder.transcript
     }
 
-    fn generate_ke2_input<CS: CipherSuite<KeyExchange = Self>, R: CryptoRng + RngCore>(
+    fn generate_ke2_input<CS: CipherSuite<KeyExchange = Self>, R: CryptoRng>(
         builder: &Self::KE2Builder<'_, CS>,
         rng: &mut R,
         server_s_sk: &PrivateKey<Self::Group>,
@@ -363,7 +354,7 @@ where
         })
     }
 
-    fn generate_ke3<CS: CipherSuite<KeyExchange = Self>, R: CryptoRng + RngCore>(
+    fn generate_ke3<CS: CipherSuite<KeyExchange = Self>, R: CryptoRng>(
         rng: &mut R,
         credential_request: SerializedCredentialRequest<CS>,
         ke1_message: Self::KE1Message,
@@ -504,29 +495,24 @@ where
     SIG::VerifyState<CS, KE>: Serialize,
     // Ke2State: ((SigPk + Hash) + VerifyState) + Hash
     <SIG::Group as Group>::PkLen: Add<OutputSize<KeHash<CS>>>,
-    Sum<<SIG::Group as Group>::PkLen, OutputSize<KeHash<CS>>>:
-        ArrayLength<u8> + Add<VerifyStateLen<CS, SIG, KE>>,
+    Sum<<SIG::Group as Group>::PkLen, OutputSize<KeHash<CS>>>: Add<VerifyStateLen<CS, SIG, KE>>,
     Sum<Sum<<SIG::Group as Group>::PkLen, OutputSize<KeHash<CS>>>, VerifyStateLen<CS, SIG, KE>>:
-        ArrayLength<u8> + Add<OutputSize<KeHash<CS>>>,
-    Ke2StateLen<CS, SIG, KE>: ArrayLength<u8>,
+        Add<OutputSize<KeHash<CS>>>,
+    Ke2StateLen<CS, SIG, KE>: ArrayLength,
 {
     type Len = Ke2StateLen<CS, SIG, KE>;
 
     fn serialize(&self) -> GenericArray<u8, Self::Len> {
-        self.client_s_pk
-            .serialize()
-            .concat(self.session_key.clone())
-            .concat(self.verify_state.serialize())
-            .concat(self.expected_mac.clone())
+        concat(&[
+            &self.client_s_pk.serialize(),
+            &self.session_key,
+            &self.verify_state.serialize(),
+            &self.expected_mac,
+        ])
     }
 }
 
-impl<SIG: SignatureProtocol, KE: Group, KEH: Hash> Deserialize for Ke2Message<SIG, KE, KEH>
-where
-    KEH::Core: ProxyHash,
-    <KEH::Core as BlockSizeUser>::BlockSize: IsLess<U256>,
-    Le<<KEH::Core as BlockSizeUser>::BlockSize, U256>: NonZero,
-{
+impl<SIG: SignatureProtocol, KE: Group, KEH: Hash> Deserialize for Ke2Message<SIG, KE, KEH> {
     fn deserialize_take(input: &mut &[u8]) -> Result<Self, ProtocolError> {
         Ok(Self {
             server_nonce: input.take_array("server nonce")?,
@@ -539,31 +525,25 @@ where
 
 impl<SIG: SignatureProtocol, KE: Group, KEH: Hash> Serialize for Ke2Message<SIG, KE, KEH>
 where
-    KEH::Core: ProxyHash,
-    <KEH::Core as BlockSizeUser>::BlockSize: IsLess<U256>,
-    Le<<KEH::Core as BlockSizeUser>::BlockSize, U256>: NonZero,
     // Ke2Message: ((Nonce + KePk) + Signature) + Hash
     NonceLen: Add<KE::PkLen>,
-    Sum<NonceLen, KE::PkLen>: ArrayLength<u8> + Add<SIG::SignatureLen>,
-    Sum<Sum<NonceLen, KE::PkLen>, SIG::SignatureLen>: ArrayLength<u8> + Add<OutputSize<KEH>>,
-    Sum<Sum<Sum<NonceLen, KE::PkLen>, SIG::SignatureLen>, OutputSize<KEH>>: ArrayLength<u8>,
+    Sum<NonceLen, KE::PkLen>: Add<SIG::SignatureLen>,
+    Sum<Sum<NonceLen, KE::PkLen>, SIG::SignatureLen>: Add<OutputSize<KEH>>,
+    Sum<Sum<Sum<NonceLen, KE::PkLen>, SIG::SignatureLen>, OutputSize<KEH>>: ArrayLength,
 {
     type Len = Sum<Sum<Sum<NonceLen, KE::PkLen>, SIG::SignatureLen>, OutputSize<KEH>>;
 
     fn serialize(&self) -> GenericArray<u8, Self::Len> {
-        self.server_nonce
-            .concat(self.server_e_pk.serialize())
-            .concat(SIG::serialize_signature(&self.signature))
-            .concat(self.mac.clone())
+        concat(&[
+            &self.server_nonce,
+            &self.server_e_pk.serialize(),
+            &SIG::serialize_signature(&self.signature),
+            &self.mac,
+        ])
     }
 }
 
-impl<SIG: SignatureProtocol, KEH: Hash> Deserialize for Ke3Message<SIG, KEH>
-where
-    KEH::Core: ProxyHash,
-    <KEH::Core as BlockSizeUser>::BlockSize: IsLess<U256>,
-    Le<<KEH::Core as BlockSizeUser>::BlockSize, U256>: NonZero,
-{
+impl<SIG: SignatureProtocol, KEH: Hash> Deserialize for Ke3Message<SIG, KEH> {
     fn deserialize_take(input: &mut &[u8]) -> Result<Self, ProtocolError> {
         Ok(Self {
             signature: SIG::deserialize_take_signature(input)?,
@@ -574,16 +554,13 @@ where
 
 impl<SIG: SignatureProtocol, KEH: Hash> Serialize for Ke3Message<SIG, KEH>
 where
-    KEH::Core: ProxyHash,
-    <KEH::Core as BlockSizeUser>::BlockSize: IsLess<U256>,
-    Le<<KEH::Core as BlockSizeUser>::BlockSize, U256>: NonZero,
     // Ke2Message: Signature + Hash
     SIG::SignatureLen: Add<OutputSize<KEH>>,
-    Sum<SIG::SignatureLen, OutputSize<KEH>>: ArrayLength<u8>,
+    Sum<SIG::SignatureLen, OutputSize<KEH>>: ArrayLength,
 {
     type Len = Sum<SIG::SignatureLen, OutputSize<KEH>>;
 
     fn serialize(&self) -> GenericArray<u8, Self::Len> {
-        SIG::serialize_signature(&self.signature).concat(self.mac.clone())
+        concat(&[&SIG::serialize_signature(&self.signature), &self.mac])
     }
 }

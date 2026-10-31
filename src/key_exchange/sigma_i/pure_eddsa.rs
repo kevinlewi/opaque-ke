@@ -6,13 +6,13 @@
 // of this source tree. You may select, at your option, one of the above-listed
 // licenses.
 
-//! PureEdDSA implementation for [`SigmaI`](crate::SigmaI). Currently only
+//! `PureEdDSA` implementation for [`SigmaI`](crate::SigmaI). Currently only
 //! supports [`Ed25519`](crate::Ed25519).
 
 use core::marker::PhantomData;
 
-use generic_array::GenericArray;
-use rand::{CryptoRng, RngCore};
+use hybrid_array::Array;
+use rand::CryptoRng;
 use zeroize::Zeroize;
 
 use self::implementation::PureEddsaImpl;
@@ -22,7 +22,7 @@ use crate::errors::ProtocolError;
 use crate::key_exchange::group::Group;
 use crate::key_exchange::sigma_i::CachedMessage;
 
-/// PureEdDSA for [`SigmaI`](crate::SigmaI).
+/// `PureEdDSA` for [`SigmaI`](crate::SigmaI).
 ///
 /// The ["verification state"](Self::VerifyState) is a [`CachedMessage`],
 /// created by calling [`Message::to_cached()`].
@@ -34,7 +34,7 @@ impl<G: PureEddsaImpl> SignatureProtocol for PureEddsa<G> {
     type SignatureLen = G::SignatureLen;
     type VerifyState<CS: CipherSuite, KE: Group> = CachedMessage<CS, KE>;
 
-    fn sign<'a, R: CryptoRng + RngCore, CS: CipherSuite, KE: Group>(
+    fn sign<'a, R: CryptoRng, CS: CipherSuite, KE: Group>(
         sk: &G::Sk,
         _: &mut R,
         message: &Message<CS, KE>,
@@ -55,19 +55,19 @@ impl<G: PureEddsaImpl> SignatureProtocol for PureEddsa<G> {
         G::deserialize_take_signature(bytes)
     }
 
-    fn serialize_signature(signature: &Self::Signature) -> GenericArray<u8, Self::SignatureLen> {
+    fn serialize_signature(signature: &Self::Signature) -> Array<u8, Self::SignatureLen> {
         G::serialize_signature(signature)
     }
 }
 
 pub(in super::super) mod implementation {
-    use generic_array::ArrayLength;
+    use hybrid_array::ArraySize;
 
     use super::*;
 
     pub trait PureEddsaImpl: Group {
         type Signature: Clone + Zeroize;
-        type SignatureLen: ArrayLength<u8>;
+        type SignatureLen: ArraySize + generic_array::ArrayLength;
 
         fn sign<CS: CipherSuite, KE: Group>(
             sk: &Self::Sk,
@@ -83,7 +83,6 @@ pub(in super::super) mod implementation {
 
         fn deserialize_take_signature(bytes: &mut &[u8]) -> Result<Self::Signature, ProtocolError>;
 
-        fn serialize_signature(signature: &Self::Signature)
-        -> GenericArray<u8, Self::SignatureLen>;
+        fn serialize_signature(signature: &Self::Signature) -> Array<u8, Self::SignatureLen>;
     }
 }

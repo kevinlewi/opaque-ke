@@ -12,9 +12,9 @@ pub use curve25519_dalek;
 use curve25519_dalek::montgomery::MontgomeryPoint;
 use curve25519_dalek::scalar;
 use curve25519_dalek::traits::IsIdentity;
-use generic_array::GenericArray;
-use generic_array::typenum::U32;
-use rand::{CryptoRng, RngCore};
+use hybrid_array::Array;
+use hybrid_array::typenum::U32;
+use rand::CryptoRng;
 use subtle::ConstantTimeEq;
 use zeroize::ZeroizeOnDrop;
 
@@ -33,7 +33,7 @@ impl Group for Curve25519 {
     type Sk = Scalar;
     type SkLen = U32;
 
-    fn serialize_pk(pk: &Self::Pk) -> GenericArray<u8, Self::PkLen> {
+    fn serialize_pk(pk: &Self::Pk) -> Array<u8, Self::PkLen> {
         pk.0.to_bytes().into()
     }
 
@@ -43,7 +43,7 @@ impl Group for Curve25519 {
             .and_then(|bytes| NonIdentity::from_bytes(bytes.into()))
     }
 
-    fn random_sk<R: RngCore + CryptoRng>(rng: &mut R) -> Self::Sk {
+    fn random_sk<R: CryptoRng>(rng: &mut R) -> Self::Sk {
         // Sample 32 random bytes and then clamp, as described in https://cr.yp.to/ecdh.html
         let mut scalar_bytes = [0u8; 32];
         rng.fill_bytes(&mut scalar_bytes);
@@ -52,7 +52,7 @@ impl Group for Curve25519 {
         Scalar(scalar)
     }
 
-    fn derive_scalar(seed: GenericArray<u8, Self::SkLen>) -> Result<Self::Sk, InternalError> {
+    fn derive_scalar(seed: Array<u8, Self::SkLen>) -> Result<Self::Sk, InternalError> {
         Ok(Scalar(scalar::clamp_integer(seed.into())))
     }
 
@@ -60,7 +60,7 @@ impl Group for Curve25519 {
         NonIdentity(MontgomeryPoint::mul_base_clamped(sk.0))
     }
 
-    fn serialize_sk(sk: &Self::Sk) -> GenericArray<u8, Self::SkLen> {
+    fn serialize_sk(sk: &Self::Sk) -> Array<u8, Self::SkLen> {
         sk.0.into()
     }
 
@@ -72,7 +72,7 @@ impl Group for Curve25519 {
 }
 
 impl DiffieHellman<Curve25519> for Scalar {
-    fn diffie_hellman(&self, pk: &NonIdentity) -> GenericArray<u8, U32> {
+    fn diffie_hellman(&self, pk: &NonIdentity) -> Array<u8, U32> {
         Curve25519::serialize_pk(&NonIdentity(pk.0.mul_clamped(self.0)))
     }
 }

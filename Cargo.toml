@@ -16,9 +16,9 @@ version = "4.1.0-pre.2"
 argon2 = ["dep:argon2"]
 curve25519 = ["dep:curve25519-dalek"]
 default = ["ristretto255", "serde"]
-ecdsa = ["dep:ecdsa", "dep:rfc6979"]
+ecdsa = ["dep:ecdsa"]
 ed25519 = ["dep:curve25519-dalek", "dep:ed25519-dalek"]
-kem = ["dep:ml-kem", "dep:rand_core_10"]
+kem = ["dep:ml-kem"]
 ristretto255 = ["dep:curve25519-dalek", "voprf/ristretto255-ciphersuite"]
 serde = [
   "dep:serde",
@@ -27,6 +27,7 @@ serde = [
   "ed25519-dalek?/serde",
   "elliptic-curve/serde",
   "generic-array/serde",
+  "hybrid-array/serde",
   "voprf/serde",
   "zeroize/serde",
 ]
@@ -36,39 +37,39 @@ std = ["dep:getrandom", "rand/std"]
 argon2 = { version = "0.6", default-features = false, features = [
   "alloc",
 ], optional = true }
-curve25519-dalek = { version = "4", default-features = false, features = [
+curve25519-dalek = { version = "5", default-features = false, features = [
   "zeroize",
 ], optional = true }
 derive-where = { version = "1.4", features = ["zeroize-on-drop"] }
-digest = "0.10"
+digest = "0.11"
 displaydoc = { version = "0.2", default-features = false }
-ecdsa = { version = "0.16", default-features = false, features = [
-  "arithmetic",
-  "hazmat",
+ecdsa = { version = "0.17", default-features = false, features = [
+  "algorithm",
 ], optional = true }
-ed25519-dalek = { version = "2", default-features = false, features = [
+ed25519-dalek = { version = "3", default-features = false, features = [
   "digest",
   "hazmat",
 ], optional = true }
-elliptic-curve = { version = "0.13", features = ["hash2curve", "sec1"] }
-generic-array = "=0.14.7" # pinned to avoid deprecation warnings
-hkdf = "0.12"
-hmac = "0.12"
+elliptic-curve = { version = "0.14.3", features = ["sec1"] }
+generic-array = { version = "1", features = ["hybrid-array-0_4", "zeroize"] }
+hkdf = "0.13"
+hmac = "0.13"
+hybrid-array = "0.4"
 ml-kem = { version = "0.3.0-rc.0", default-features = false, features = [
   "zeroize",
 ], optional = true }
-rand = { version = "0.8", default-features = false }
-rand_core_10 = { package = "rand_core", version = "0.10", default-features = false, optional = true }
-rfc6979 = { version = "0.4", optional = true }
+rand = { version = "0.10", default-features = false }
 serde = { version = "1", default-features = false, features = [
   "derive",
 ], optional = true }
 subtle = { version = "2.6", default-features = false }
-voprf = { version = "0.5", default-features = false, features = ["danger"] }
+voprf = { version = "0.6.0-pre.1", git = "https://github.com/nbari/voprf", rev = "8de460fe946cf99ab738a2085044497daa684381", default-features = false, features = [
+  "danger",
+] }
 zeroize = { version = "1.8", features = ["zeroize_derive"] }
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
-getrandom = { version = "0.2", features = ["js"], optional = true }
+getrandom = { version = "0.4", features = ["wasm_js"], optional = true }
 
 [dev-dependencies]
 anyhow = "1"
@@ -76,31 +77,27 @@ bincode = "1"
 chacha20poly1305 = "0.10"
 criterion = "0.8"
 cryptoki = "0.12.1"
-elliptic-curve = { version = "0.13", features = ["alloc", "pkcs8"] }
+elliptic-curve = { version = "0.14", features = ["alloc", "pkcs8"] }
 hex = "0.4"
-opaque-ke-3 = { package = "opaque-ke", version = "=3.0.0" }
-p256 = { version = "0.13", default-features = false, features = [
+p256 = { version = "0.14", default-features = false, features = [
   "ecdsa",
-  "hash2curve",
   "pkcs8",
-  "voprf",
+  "oprf",
 ] }
-p384 = { version = "0.13", default-features = false, features = [
-  "hash2curve",
+p384 = { version = "0.14", default-features = false, features = [
   "pkcs8",
-  "voprf",
+  "oprf",
 ] }
-p521 = { version = "0.13.3", default-features = false, features = [
-  "hash2curve",
+p521 = { version = "0.14", default-features = false, features = [
   "pkcs8",
-  "voprf",
+  "oprf",
 ] }
 paste = "1"
 proptest = "1"
-rand = "0.8"
-rand_chacha = "0.3"
+rand = "0.10"
+rand_chacha = "0.10"
 regex = "1"
-sha2 = { version = "0.10", default-features = false }
+sha2 = { version = "0.11", default-features = false }
 thiserror = "2"
 # MSRV
 rustyline = "17"

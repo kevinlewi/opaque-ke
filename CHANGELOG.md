@@ -4,6 +4,12 @@
 
 Upgrade the optional Argon2 dependency to 0.6, preserving the existing KSF
 parameters and output bytes.
+Migrate to `elliptic-curve` 0.14.3 and the corresponding voprf/RustCrypto APIs
+to remove the `crypto-bigint` 0.5 dependency affected by RUSTSEC-2026-0387.
+The Rust 1.87 MSRV is unchanged. Public hash, RNG, group and buffer types follow
+the new dependencies; protocol encodings, registration records and ML-KEM
+expanded-key client states retain their existing byte formats. The README
+describes the API changes and the voprf release dependency.
 
 ## 4.1.0-pre.2 (March 26, 2026)
 * Upgraded ml-kem from 0.2 to 0.3.0-rc.0

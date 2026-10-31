@@ -11,14 +11,15 @@
 use core::fmt::{self, Debug, Formatter};
 
 use derive_where::derive_where;
-use elliptic_curve::group::GroupEncoding;
-use elliptic_curve::ops::MulByGenerator;
-use elliptic_curve::sec1::{ModulusSize, ToEncodedPoint};
+use elliptic_curve::group::{Group as _, GroupEncoding};
+use elliptic_curve::sec1::{ModulusSize, ToSec1Point};
 use elliptic_curve::{
-    CurveArithmetic, FieldBytesSize, NonZeroScalar, ProjectivePoint, Scalar, SecretKey, point,
+    CurveArithmetic, FieldBytesSize, Generate, NonZeroScalar, ProjectivePoint, Scalar, SecretKey,
+    point,
 };
-use generic_array::GenericArray;
-use rand::{CryptoRng, RngCore};
+use generic_array::ArrayLength;
+use hybrid_array::Array;
+use rand::CryptoRng;
 use voprf::Mode;
 
 use super::{Group, STR_OPAQUE_DERIVE_AUTH_KEY_PAIR};
@@ -29,10 +30,10 @@ use crate::serialization::SliceExt;
 impl<G> Group for G
 where
     Self: CurveArithmetic + voprf::CipherSuite<Group = Self> + voprf::Group<Scalar = Scalar<Self>>,
-    FieldBytesSize<Self>: ModulusSize,
-    ProjectivePoint<Self>: GroupEncoding<
-            Repr = GenericArray<u8, <FieldBytesSize<Self> as ModulusSize>::CompressedPointSize>,
-        > + ToEncodedPoint<Self>,
+    FieldBytesSize<Self>: ModulusSize + ArrayLength,
+    <FieldBytesSize<Self> as ModulusSize>::CompressedPointSize: ArrayLength,
+    ProjectivePoint<Self>: GroupEncoding<Repr = Array<u8, <FieldBytesSize<Self> as ModulusSize>::CompressedPointSize>>
+        + ToSec1Point<Self>,
 {
     // We don't use `elliptic_curve::PublicKey` because it stores its internals
     // in a format ideal for serialization and not computation. This is
@@ -45,8 +46,9 @@ where
 
     type SkLen = FieldBytesSize<Self>;
 
-    fn serialize_pk(pk: &Self::Pk) -> GenericArray<u8, Self::PkLen> {
-        GenericArray::clone_from_slice(pk.0.to_encoded_point(true).as_bytes())
+    fn serialize_pk(pk: &Self::Pk) -> Array<u8, Self::PkLen> {
+        Array::try_from(pk.0.to_point().to_sec1_point(true).as_bytes())
+            .expect("a compressed SEC1 point has the compressed point size")
     }
 
     fn deserialize_take_pk(bytes: &mut &[u8]) -> Result<Self::Pk, ProtocolError> {
@@ -56,14 +58,14 @@ where
             .ok_or(ProtocolError::SerializationError)
     }
 
-    fn random_sk<R: RngCore + CryptoRng>(rng: &mut R) -> Self::Sk {
-        SecretKey::<Self>::random(rng)
+    fn random_sk<R: CryptoRng>(rng: &mut R) -> Self::Sk {
+        SecretKey::<Self>::generate_from_rng(rng)
     }
 
-    fn derive_scalar(seed: GenericArray<u8, Self::SkLen>) -> Result<Self::Sk, InternalError> {
+    fn derive_scalar(seed: Array<u8, Self::SkLen>) -> Result<Self::Sk, InternalError> {
         voprf::derive_key::<Self>(&seed, &STR_OPAQUE_DERIVE_AUTH_KEY_PAIR, Mode::Oprf)
             .map(|scalar| {
-                NonZeroScalar::new(scalar).expect("`voprf::derive_key()` returned a zero scalar")
+                NonZeroScalar::new(scalar).expect("`derive_key()` returned a zero scalar")
             })
             .map(SecretKey::from)
             .map_err(InternalError::from)
@@ -73,13 +75,13 @@ where
         // Non-panicking version in https://github.com/RustCrypto/traits/pull/1833.
         NonIdentity(
             point::NonIdentity::new(ProjectivePoint::<Self>::mul_by_generator(
-                &sk.to_nonzero_scalar(),
+                &*sk.to_nonzero_scalar(),
             ))
             .expect("multiplying with a non-zero scalar can never yield the identity element"),
         )
     }
 
-    fn serialize_sk(sk: &Self::Sk) -> GenericArray<u8, Self::SkLen> {
+    fn serialize_sk(sk: &Self::Sk) -> Array<u8, Self::SkLen> {
         sk.to_bytes()
     }
 
@@ -92,20 +94,21 @@ where
 impl<G> DiffieHellman<G> for SecretKey<G>
 where
     G: CurveArithmetic + voprf::CipherSuite<Group = G> + voprf::Group<Scalar = Scalar<G>>,
-    FieldBytesSize<G>: ModulusSize,
-    ProjectivePoint<G>: GroupEncoding<
-            Repr = GenericArray<u8, <FieldBytesSize<G> as ModulusSize>::CompressedPointSize>,
-        > + ToEncodedPoint<G>,
+    FieldBytesSize<G>: ModulusSize + ArrayLength,
+    <FieldBytesSize<G> as ModulusSize>::CompressedPointSize: ArrayLength,
+    ProjectivePoint<G>: GroupEncoding<Repr = Array<u8, <FieldBytesSize<G> as ModulusSize>::CompressedPointSize>>
+        + ToSec1Point<G>,
 {
     fn diffie_hellman(
         &self,
         pk: &NonIdentity<G>,
-    ) -> GenericArray<u8, <FieldBytesSize<G> as ModulusSize>::CompressedPointSize> {
-        GenericArray::clone_from_slice(
-            (pk.0 * self.to_nonzero_scalar())
-                .to_encoded_point(true)
+    ) -> Array<u8, <FieldBytesSize<G> as ModulusSize>::CompressedPointSize> {
+        Array::try_from(
+            (pk.0.to_point() * *self.to_nonzero_scalar())
+                .to_sec1_point(true)
                 .as_bytes(),
         )
+        .expect("a compressed SEC1 point has the compressed point size")
     }
 }
 

@@ -12,10 +12,10 @@ use core::ops::Add;
 
 use derive_where::derive_where;
 use digest::Output;
-use generic_array::sequence::Concat;
-use generic_array::typenum::{Sum, Unsigned};
 use generic_array::{ArrayLength, GenericArray};
-use rand::{CryptoRng, RngCore};
+use hybrid_array::Array;
+use hybrid_array::typenum::{Sum, Unsigned};
+use rand::CryptoRng;
 use voprf::{BlindedElement, BlindedElementLen, EvaluationElement, EvaluationElementLen};
 use zeroize::Zeroizing;
 
@@ -33,7 +33,7 @@ use crate::keypair::PublicKey;
 use crate::opaque::{
     MaskedResponse, MaskedResponseLen, ServerLogin, ServerLoginStartResult, ServerSetup,
 };
-use crate::serialization::SliceExt;
+use crate::serialization::{SliceExt, concat};
 
 ////////////////////////////
 // High-level API Structs //
@@ -137,10 +137,10 @@ pub struct CredentialRequest<CS: CipherSuite> {
 pub struct ServerLoginBuilder<'a, CS: CipherSuite, SK: Clone> {
     pub(crate) server_s_sk: SK,
     pub(crate) evaluation_element: voprf::EvaluationElement<CS::OprfCs>,
-    pub(crate) masking_nonce: Zeroizing<GenericArray<u8, NonceLen>>,
+    pub(crate) masking_nonce: Zeroizing<Array<u8, NonceLen>>,
     pub(crate) masked_response: MaskedResponse<CS>,
     #[cfg(test)]
-    pub(crate) oprf_key: Zeroizing<GenericArray<u8, <OprfGroup<CS> as voprf::Group>::ScalarLen>>,
+    pub(crate) oprf_key: Zeroizing<Array<u8, <OprfGroup<CS> as voprf::Group>::ScalarLen>>,
     pub(crate) ke2_builder: <CS::KeyExchange as KeyExchange>::KE2Builder<'a, CS>,
 }
 
@@ -190,7 +190,7 @@ impl<CS: CipherSuite, SK: Clone> ServerLoginBuilder<'_, CS, SK> {
 pub struct CredentialResponse<CS: CipherSuite> {
     /// the server's oprf output
     pub(crate) evaluation_element: voprf::EvaluationElement<CS::OprfCs>,
-    pub(crate) masking_nonce: GenericArray<u8, NonceLen>,
+    pub(crate) masking_nonce: Array<u8, NonceLen>,
     pub(crate) masked_response: MaskedResponse<CS>,
     pub(crate) ke2_message: <CS::KeyExchange as KeyExchange>::KE2Message,
 }
@@ -230,7 +230,7 @@ impl<CS: CipherSuite> RegistrationRequest<CS> {
     }
 
     /// Serialization into bytes
-    pub fn serialize(&self) -> GenericArray<u8, RegistrationRequestLen<CS>> {
+    pub fn serialize(&self) -> Array<u8, RegistrationRequestLen<CS>> {
         <OprfGroup<CS> as voprf::Group>::serialize_elem(self.blinded_element.value())
     }
 
@@ -252,10 +252,12 @@ impl<CS: CipherSuite> RegistrationResponse<CS> {
     where
         // RegistrationResponse: KgPk + KePk
         <OprfGroup<CS> as voprf::Group>::ElemLen: Add<<KeGroup<CS> as Group>::PkLen>,
-        RegistrationResponseLen<CS>: ArrayLength<u8>,
+        RegistrationResponseLen<CS>: ArrayLength,
     {
-        <OprfGroup<CS> as voprf::Group>::serialize_elem(self.evaluation_element.value())
-            .concat(self.server_s_pk.serialize())
+        concat(&[
+            &<OprfGroup<CS> as voprf::Group>::serialize_elem(self.evaluation_element.value()),
+            &self.server_s_pk.serialize(),
+        ])
     }
 
     /// Deserialization from bytes
@@ -293,14 +295,14 @@ impl<CS: CipherSuite> RegistrationUpload<CS> {
     where
         // RegistrationUpload: (KePk + Hash) + Envelope
         <KeGroup<CS> as Group>::PkLen: Add<OutputSize<OprfHash<CS>>>,
-        Sum<<KeGroup<CS> as Group>::PkLen, OutputSize<OprfHash<CS>>>:
-            ArrayLength<u8> + Add<EnvelopeLen<CS>>,
-        RegistrationUploadLen<CS>: ArrayLength<u8>,
+        Sum<<KeGroup<CS> as Group>::PkLen, OutputSize<OprfHash<CS>>>: Add<EnvelopeLen<CS>>,
+        RegistrationUploadLen<CS>: ArrayLength,
     {
-        self.client_s_pk
-            .serialize()
-            .concat(self.masking_key.clone())
-            .concat(self.envelope.serialize())
+        concat(&[
+            &self.client_s_pk.serialize(),
+            &self.masking_key,
+            &self.envelope.serialize(),
+        ])
     }
 
     /// Deserialization from bytes
@@ -313,7 +315,7 @@ impl<CS: CipherSuite> RegistrationUpload<CS> {
     }
 
     // Creates a dummy instance used for faking a [CredentialResponse]
-    pub(crate) fn dummy<R: RngCore + CryptoRng, SK: Clone, OS: Clone>(
+    pub(crate) fn dummy<R: CryptoRng, SK: Clone, OS: Clone>(
         rng: &mut R,
         server_setup: &ServerSetup<CS, SK, OS>,
     ) -> Self {
@@ -339,10 +341,12 @@ impl<CS: CipherSuite> CredentialRequest<CS> {
         <CS::KeyExchange as KeyExchange>::KE1Message: Serialize,
         // CredentialRequest: KgPk + Ke1Message
         <OprfGroup<CS> as voprf::Group>::ElemLen: Add<Ke1MessageLen<CS>>,
-        CredentialRequestLen<CS>: ArrayLength<u8>,
+        CredentialRequestLen<CS>: ArrayLength,
     {
-        <OprfGroup<CS> as voprf::Group>::serialize_elem(self.blinded_element.value())
-            .concat(self.ke1_message.serialize())
+        concat(&[
+            &<OprfGroup<CS> as voprf::Group>::serialize_elem(self.blinded_element.value()),
+            &self.ke1_message.serialize(),
+        ])
     }
 
     /// Deserialization from bytes
@@ -391,17 +395,17 @@ impl<CS: CipherSuite> CredentialResponse<CS> {
         <CS::KeyExchange as KeyExchange>::KE2Message: Serialize,
         // CredentialResponseWithoutKeLen: (KgPk + Nonce) + MaskedResponse
         <OprfGroup<CS> as voprf::Group>::ElemLen: Add<NonceLen>,
-        Sum<<OprfGroup<CS> as voprf::Group>::ElemLen, NonceLen>:
-            ArrayLength<u8> + Add<MaskedResponseLen<CS>>,
-        CredentialResponseWithoutKeLen<CS>: ArrayLength<u8>,
+        Sum<<OprfGroup<CS> as voprf::Group>::ElemLen, NonceLen>: Add<MaskedResponseLen<CS>>,
         // CredentialResponse: CredentialResponseWithoutKeLen + Ke2Message
         CredentialResponseWithoutKeLen<CS>: Add<Ke2MessageLen<CS>>,
-        CredentialResponseLen<CS>: ArrayLength<u8>,
+        CredentialResponseLen<CS>: ArrayLength,
     {
-        <OprfGroup<CS> as voprf::Group>::serialize_elem(self.evaluation_element.value())
-            .concat(self.masking_nonce)
-            .concat(self.masked_response.serialize())
-            .concat(self.ke2_message.serialize())
+        concat(&[
+            &<OprfGroup<CS> as voprf::Group>::serialize_elem(self.evaluation_element.value()),
+            &self.masking_nonce,
+            &self.masked_response.serialize(),
+            &self.ke2_message.serialize(),
+        ])
     }
 
     /// Deserialization from bytes

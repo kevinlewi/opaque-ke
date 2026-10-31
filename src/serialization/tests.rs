@@ -15,8 +15,9 @@ use generic_array::ArrayLength;
 use generic_array::typenum::{Sum, Unsigned};
 use proptest::collection::vec;
 use proptest::prelude::*;
-use rand::RngCore;
-use rand::rngs::OsRng;
+use rand::Rng;
+use rand::rand_core::UnwrapErr;
+use rand::rngs::SysRng;
 use voprf::Group as _;
 
 use crate::ciphersuite::{CipherSuite, KeGroup, OprfGroup, OprfHash};
@@ -122,14 +123,14 @@ impl CipherSuite for SigmaIEd25519Ph {
 
 #[cfg(feature = "ecdsa")]
 fn random_point<CS: CipherSuite>() -> <KeGroup<CS> as Group>::Pk {
-    let mut rng = OsRng;
+    let mut rng = UnwrapErr(SysRng);
     let sk = KeGroup::<CS>::random_sk(&mut rng);
     KeGroup::<CS>::public_key(&sk)
 }
 
 fn random_element<CS: CipherSuite>() -> <OprfGroup<CS> as voprf::Group>::Elem {
-    let mut rng = OsRng;
-    let scalar = OprfGroup::<CS>::random_scalar(&mut rng);
+    let mut rng = UnwrapErr(SysRng);
+    let scalar = OprfGroup::<CS>::random_scalar(&mut rng).unwrap();
     OprfGroup::<CS>::base_elem() * &scalar
 }
 
@@ -139,10 +140,10 @@ fn client_registration_roundtrip() -> Result<(), ProtocolError> {
     where
         // ClientRegistration: KgSk + KgPk
         <OprfGroup<CS> as voprf::Group>::ScalarLen: Add<<OprfGroup<CS> as voprf::Group>::ElemLen>,
-        ClientRegistrationLen<CS>: ArrayLength<u8>,
+        ClientRegistrationLen<CS>: ArrayLength,
     {
         let pw = b"hunter2";
-        let mut rng = OsRng;
+        let mut rng = UnwrapErr(SysRng);
 
         let blind_result = &voprf::OprfClient::<CS::OprfCs>::blind(pw, &mut rng)?;
 
@@ -186,12 +187,12 @@ fn server_registration_roundtrip() -> Result<(), ProtocolError> {
         // RegistrationUpload: (KePk + Hash) + Envelope
         <KeGroup<CS> as Group>::PkLen: Add<OutputSize<OprfHash<CS>>>,
         Sum<<KeGroup<CS> as Group>::PkLen, OutputSize<OprfHash<CS>>>:
-            ArrayLength<u8> + Add<EnvelopeLen<CS>>,
-        RegistrationUploadLen<CS>: ArrayLength<u8>,
+            ArrayLength + Add<EnvelopeLen<CS>>,
+        RegistrationUploadLen<CS>: ArrayLength,
         // ServerRegistration = RegistrationUpload
     {
         // If we don't have envelope and client_pk, the server registration just
-        let mut rng = OsRng;
+        let mut rng = UnwrapErr(SysRng);
         let mut masking_key = Output::<OprfHash<CS>>::default();
         rng.fill_bytes(&mut masking_key);
 
@@ -287,11 +288,11 @@ fn registration_response_roundtrip() -> Result<(), ProtocolError> {
     where
         // RegistrationResponse: KgPk + KePk
         <OprfGroup<CS> as voprf::Group>::ElemLen: Add<<KeGroup<CS> as Group>::PkLen>,
-        RegistrationResponseLen<CS>: ArrayLength<u8>,
+        RegistrationResponseLen<CS>: ArrayLength,
     {
         let elem = random_element::<CS>();
         let beta_bytes = OprfGroup::<CS>::serialize_elem(elem);
-        let mut rng = OsRng;
+        let mut rng = UnwrapErr(SysRng);
         let skp = KeyPair::<KeGroup<CS>>::derive_random(&mut rng);
         let pubkey_bytes = skp.public().serialize();
 
@@ -345,10 +346,10 @@ fn registration_upload_roundtrip() -> Result<(), ProtocolError> {
         // RegistrationUpload: (KePk + Hash) + Envelope
         <KeGroup<CS> as Group>::PkLen: Add<OutputSize<OprfHash<CS>>>,
         Sum<<KeGroup<CS> as Group>::PkLen, OutputSize<OprfHash<CS>>>:
-            ArrayLength<u8> + Add<EnvelopeLen<CS>>,
-        RegistrationUploadLen<CS>: ArrayLength<u8>,
+            ArrayLength + Add<EnvelopeLen<CS>>,
+        RegistrationUploadLen<CS>: ArrayLength,
     {
-        let mut rng = OsRng;
+        let mut rng = UnwrapErr(SysRng);
         let skp = KeyPair::<KeGroup<CS>>::derive_random(&mut rng);
         let pubkey_bytes = skp.public().serialize();
 
@@ -409,9 +410,9 @@ fn triple_dh_credential_request_roundtrip() -> Result<(), ProtocolError> {
         <CS::KeyExchange as KeyExchange>::KE1Message: Deserialize + Serialize,
         // CredentialRequest: KgPk + Ke1Message
         <OprfGroup<CS> as voprf::Group>::ElemLen: Add<Ke1MessageLen<CS>>,
-        CredentialRequestLen<CS>: ArrayLength<u8>,
+        CredentialRequestLen<CS>: ArrayLength,
     {
-        let mut rng = OsRng;
+        let mut rng = UnwrapErr(SysRng);
         let alpha = random_element::<CS>();
         let alpha_bytes = OprfGroup::<CS>::serialize_elem(alpha);
 
@@ -466,17 +467,17 @@ fn triple_dh_credential_response_roundtrip() -> Result<(), ProtocolError> {
         // CredentialResponseWithoutKeLen: (KgPk + Nonce) + MaskedResponse
         <OprfGroup<CS> as voprf::Group>::ElemLen: Add<NonceLen>,
         Sum<<OprfGroup<CS> as voprf::Group>::ElemLen, NonceLen>:
-            ArrayLength<u8> + Add<MaskedResponseLen<CS>>,
-        CredentialResponseWithoutKeLen<CS>: ArrayLength<u8>,
+            ArrayLength + Add<MaskedResponseLen<CS>>,
+        CredentialResponseWithoutKeLen<CS>: ArrayLength,
         // CredentialResponse: CredentialResponseWithoutKeLen + Ke2Message
         <CS::KeyExchange as KeyExchange>::KE2Message: Serialize,
         CredentialResponseWithoutKeLen<CS>: Add<Ke2MessageLen<CS>>,
-        CredentialResponseLen<CS>: ArrayLength<u8>,
+        CredentialResponseLen<CS>: ArrayLength,
     {
         let elem = random_element::<CS>();
         let elem_bytes = OprfGroup::<CS>::serialize_elem(elem);
 
-        let mut rng = OsRng;
+        let mut rng = UnwrapErr(SysRng);
 
         let mut masking_nonce = [0u8; 32];
         rng.fill_bytes(&mut masking_nonce);
@@ -550,17 +551,17 @@ fn sigma_i_ecdsa_credential_response_roundtrip() -> Result<(), ProtocolError> {
         // CredentialResponseWithoutKeLen: (KgPk + Nonce) + MaskedResponse
         <OprfGroup<CS> as voprf::Group>::ElemLen: Add<NonceLen>,
         Sum<<OprfGroup<CS> as voprf::Group>::ElemLen, NonceLen>:
-            ArrayLength<u8> + Add<MaskedResponseLen<CS>>,
-        CredentialResponseWithoutKeLen<CS>: ArrayLength<u8>,
+            ArrayLength + Add<MaskedResponseLen<CS>>,
+        CredentialResponseWithoutKeLen<CS>: ArrayLength,
         // CredentialResponse: CredentialResponseWithoutKeLen + Ke2Message
         <CS::KeyExchange as KeyExchange>::KE2Message: Serialize,
         CredentialResponseWithoutKeLen<CS>: Add<Ke2MessageLen<CS>>,
-        CredentialResponseLen<CS>: ArrayLength<u8>,
+        CredentialResponseLen<CS>: ArrayLength,
     {
         let pt = random_point::<CS>();
         let pt_bytes = KeGroup::<CS>::serialize_pk(&pt);
 
-        let mut rng = OsRng;
+        let mut rng = UnwrapErr(SysRng);
 
         let mut masking_nonce = [0u8; 32];
         rng.fill_bytes(&mut masking_nonce);
@@ -630,7 +631,7 @@ fn triple_dh_credential_finalization_roundtrip() -> Result<(), ProtocolError> {
     where
         <CS::KeyExchange as KeyExchange>::KE3Message: Deserialize + Serialize,
     {
-        let mut rng = OsRng;
+        let mut rng = UnwrapErr(SysRng);
         let mut mac = Output::<OprfHash<CS>>::default();
         rng.fill_bytes(&mut mac);
 
@@ -661,7 +662,7 @@ fn sigma_i_ecdsa_credential_finalization_roundtrip() -> Result<(), ProtocolError
     where
         <CS::KeyExchange as KeyExchange>::KE3Message: Deserialize + Serialize,
     {
-        let mut rng = OsRng;
+        let mut rng = UnwrapErr(SysRng);
 
         let r = KeGroup::<CS>::serialize_sk(&KeGroup::<CS>::random_sk(&mut rng));
         let s = KeGroup::<CS>::serialize_sk(&KeGroup::<CS>::random_sk(&mut rng));
@@ -696,16 +697,16 @@ fn triple_dh_client_login_roundtrip() -> Result<(), ProtocolError> {
         // CredentialRequest: KgPk + Ke1Message
         <CS::KeyExchange as KeyExchange>::KE1Message: Serialize,
         <OprfGroup<CS> as voprf::Group>::ElemLen: Add<Ke1MessageLen<CS>>,
-        CredentialRequestLen<CS>: ArrayLength<u8>,
+        CredentialRequestLen<CS>: ArrayLength,
         // ClientLogin: KgSk + CredentialRequest + Ke1State
         <OprfGroup<CS> as voprf::Group>::ScalarLen: Add<CredentialRequestLen<CS>>,
         <CS::KeyExchange as KeyExchange>::KE1State: Serialize,
         Sum<<OprfGroup<CS> as voprf::Group>::ScalarLen, CredentialRequestLen<CS>>:
-            ArrayLength<u8> + Add<Ke1StateLen<CS>>,
-        ClientLoginLen<CS>: ArrayLength<u8>,
+            ArrayLength + Add<Ke1StateLen<CS>>,
+        ClientLoginLen<CS>: ArrayLength,
     {
         let pw = b"hunter2";
-        let mut rng = OsRng;
+        let mut rng = UnwrapErr(SysRng);
 
         let client_e_kp = KeyPair::<KeGroup<CS>>::derive_random(&mut rng);
         let mut client_nonce = [0; NonceLen::USIZE];
@@ -762,7 +763,7 @@ fn triple_dh_ke1_message_roundtrip() -> Result<(), ProtocolError> {
     where
         <CS::KeyExchange as KeyExchange>::KE1Message: Deserialize + Serialize,
     {
-        let mut rng = OsRng;
+        let mut rng = UnwrapErr(SysRng);
 
         let client_e_kp = KeyPair::<KeGroup<CS>>::derive_random(&mut rng);
         let mut client_nonce = vec![0u8; NonceLen::USIZE];
@@ -798,7 +799,7 @@ fn triple_dh_ke2_message_roundtrip() -> Result<(), ProtocolError> {
     where
         <CS::KeyExchange as KeyExchange>::KE2Message: Deserialize + Serialize,
     {
-        let mut rng = OsRng;
+        let mut rng = UnwrapErr(SysRng);
 
         let server_e_kp = KeyPair::<KeGroup<CS>>::derive_random(&mut rng);
         let mut mac = Output::<OprfHash<CS>>::default();
@@ -839,7 +840,7 @@ fn sigma_i_ecdsa_ke2_message_roundtrip() -> Result<(), ProtocolError> {
     where
         <CS::KeyExchange as KeyExchange>::KE2Message: Deserialize + Serialize,
     {
-        let mut rng = OsRng;
+        let mut rng = UnwrapErr(SysRng);
 
         let server_e_kp = KeyPair::<KeGroup<CS>>::derive_random(&mut rng);
         let mut mac = Output::<OprfHash<CS>>::default();
@@ -878,7 +879,7 @@ fn triple_dh_ke3_message_roundtrip() -> Result<(), ProtocolError> {
     where
         <CS::KeyExchange as KeyExchange>::KE3Message: Deserialize + Serialize,
     {
-        let mut rng = OsRng;
+        let mut rng = UnwrapErr(SysRng);
         let mut mac = Output::<OprfHash<CS>>::default();
         rng.fill_bytes(&mut mac);
 
@@ -910,7 +911,7 @@ fn sigma_i_ecdsa_ke3_message_roundtrip() -> Result<(), ProtocolError> {
     where
         <CS::KeyExchange as KeyExchange>::KE3Message: Deserialize + Serialize,
     {
-        let mut rng = OsRng;
+        let mut rng = UnwrapErr(SysRng);
         let r = KeGroup::<CS>::serialize_sk(&KeGroup::<CS>::random_sk(&mut rng));
         let s = KeGroup::<CS>::serialize_sk(&KeGroup::<CS>::random_sk(&mut rng));
         let mut mac = Output::<OprfHash<CS>>::default();

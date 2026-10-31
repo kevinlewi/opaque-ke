@@ -10,9 +10,9 @@ use core::ops::Add;
 
 use derive_where::derive_where;
 use digest::{FixedOutput, Output, Update};
-use generic_array::sequence::Concat;
-use generic_array::typenum::Sum;
 use generic_array::{ArrayLength, GenericArray};
+use hybrid_array::Array;
+use hybrid_array::typenum::Sum;
 use zeroize::Zeroize;
 
 use crate::ciphersuite::{CipherSuite, KeGroup, KeHash, OprfGroup};
@@ -26,7 +26,7 @@ use crate::key_exchange::{
     SerializedIdentifier, SerializedIdentifiers,
 };
 use crate::opaque::MaskedResponseLen;
-use crate::serialization::{SliceExt, UpdateExt};
+use crate::serialization::{SliceExt, UpdateExt, concat};
 
 /// This holds the message to be signed and the message to be verified.
 ///
@@ -102,8 +102,8 @@ pub struct CachedMessage<CS: CipherSuite, KE: Group> {
     pub(super) credential_request: SerializedCredentialRequest<CS>,
     pub(super) ke1_message: Ke1MessageIter<KE>,
     pub(super) credential_response: SerializedCredentialResponse<CS>,
-    pub(super) server_nonce: GenericArray<u8, NonceLen>,
-    pub(super) server_e_pk: GenericArray<u8, KE::PkLen>,
+    pub(super) server_nonce: Array<u8, NonceLen>,
+    pub(super) server_e_pk: Array<u8, KE::PkLen>,
     pub(super) server_mac: Output<KeHash<CS>>,
 }
 
@@ -264,20 +264,20 @@ type CachedMessageLen<CS: CipherSuite, KE: Group> = Sum<
 
 impl<CS: CipherSuite, KE: Group> Serialize for CachedMessage<CS, KE>
 where
-    SerializedCredentialRequestLen<CS>: ArrayLength<u8> + Add<Ke1MessageIterLen<KE>>,
+    SerializedCredentialRequestLen<CS>: ArrayLength + Add<Ke1MessageIterLen<KE>>,
     Sum<SerializedCredentialRequestLen<CS>, Ke1MessageIterLen<KE>>:
-        ArrayLength<u8> + Add<SerializedCredentialResponseLen<CS>>,
+        Add<SerializedCredentialResponseLen<CS>>,
     Sum<
         Sum<SerializedCredentialRequestLen<CS>, Ke1MessageIterLen<KE>>,
         SerializedCredentialResponseLen<CS>,
-    >: ArrayLength<u8> + Add<NonceLen>,
+    >: Add<NonceLen>,
     Sum<
         Sum<
             Sum<SerializedCredentialRequestLen<CS>, Ke1MessageIterLen<KE>>,
             SerializedCredentialResponseLen<CS>,
         >,
         NonceLen,
-    >: ArrayLength<u8> + Add<KE::PkLen>,
+    >: Add<KE::PkLen>,
     Sum<
         Sum<
             Sum<
@@ -287,26 +287,26 @@ where
             NonceLen,
         >,
         KE::PkLen,
-    >: ArrayLength<u8> + Add<OutputSize<KeHash<CS>>>,
-    CachedMessageLen<CS, KE>: ArrayLength<u8>,
+    >: Add<OutputSize<KeHash<CS>>>,
+    CachedMessageLen<CS, KE>: ArrayLength,
     // Ke1MessageIter
     NonceLen: Add<KE::PkLen>,
-    Ke1MessageIterLen<KE>: ArrayLength<u8>,
+    Ke1MessageIterLen<KE>: ArrayLength,
     // CredentialResponseParts
     <OprfGroup<CS> as voprf::Group>::ElemLen: Add<NonceLen>,
-    Sum<<OprfGroup<CS> as voprf::Group>::ElemLen, NonceLen>:
-        ArrayLength<u8> + Add<MaskedResponseLen<CS>>,
-    SerializedCredentialResponseLen<CS>: ArrayLength<u8>,
+    Sum<<OprfGroup<CS> as voprf::Group>::ElemLen, NonceLen>: Add<MaskedResponseLen<CS>>,
+    SerializedCredentialResponseLen<CS>: ArrayLength,
 {
     type Len = CachedMessageLen<CS, KE>;
 
     fn serialize(&self) -> GenericArray<u8, Self::Len> {
-        self.credential_request
-            .serialize()
-            .concat(self.ke1_message.serialize())
-            .concat(self.credential_response.serialize())
-            .concat(self.server_nonce)
-            .concat(self.server_e_pk.clone())
-            .concat(self.server_mac.clone())
+        concat(&[
+            &self.credential_request.serialize(),
+            &self.ke1_message.serialize(),
+            &self.credential_response.serialize(),
+            &self.server_nonce,
+            &self.server_e_pk,
+            &self.server_mac,
+        ])
     }
 }

@@ -11,12 +11,11 @@
 
 use core::ops::Add;
 
-use digest::core_api::{BlockSizeUser, CoreProxy};
-use generic_array::ArrayLength;
-use generic_array::typenum::{IsLess, Le, NonZero, Sum, U256};
+use hybrid_array::ArraySize;
+use hybrid_array::typenum::Sum;
 
 use crate::envelope::NonceLen;
-use crate::hash::{Hash, OutputSize, ProxyHash};
+use crate::hash::{Hash, OutputSize};
 use crate::key_exchange::KeyExchange;
 use crate::key_exchange::group::Group;
 use crate::ksf::Ksf;
@@ -31,15 +30,11 @@ use crate::opaque::MaskedResponseLen;
 pub trait CipherSuite
 where
     OprfHash<Self>: Hash,
-    <OprfHash<Self> as CoreProxy>::Core: ProxyHash,
-    <<OprfHash<Self> as CoreProxy>::Core as BlockSizeUser>::BlockSize: IsLess<U256>,
-    Le<<<OprfHash<Self> as CoreProxy>::Core as BlockSizeUser>::BlockSize, U256>: NonZero,
     // Envelope: Nonce + Hash
     // MaskedResponse: (Nonce + Hash) + KePk
     OutputSize<OprfHash<Self>>: Add<NonceLen>,
-    Sum<OutputSize<OprfHash<Self>>, NonceLen>:
-        ArrayLength<u8> + Add<<KeGroup<Self> as Group>::PkLen>,
-    MaskedResponseLen<Self>: ArrayLength<u8>,
+    Sum<OutputSize<OprfHash<Self>>, NonceLen>: ArraySize + Add<<KeGroup<Self> as Group>::PkLen>,
+    MaskedResponseLen<Self>: ArraySize,
 {
     /// A VOPRF ciphersuite, see [`voprf::CipherSuite`].
     type OprfCs: voprf::CipherSuite;
