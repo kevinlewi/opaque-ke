@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+Upgrade the optional Argon2 dependency to 0.6, preserving the existing KSF
+parameters and output bytes.
+
 ## 4.1.0-pre.2 (March 26, 2026)
 * Upgraded ml-kem from 0.2 to 0.3.0-rc.0
 * Increased MSRV to 1.87

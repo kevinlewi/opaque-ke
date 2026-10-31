@@ -46,3 +46,29 @@ impl Ksf for argon2::Argon2<'_> {
         Ok(output)
     }
 }
+
+#[cfg(all(test, feature = "argon2"))]
+mod tests {
+    use super::*;
+
+    /// Preserve the default KSF outputs generated with argon2 0.5.3, including
+    /// the zero salt used by OPAQUE, for 32-byte and 64-byte OPRF outputs.
+    #[test]
+    fn argon2_matches_0_5_3_output() {
+        let ksf = argon2::Argon2::default();
+        let output = ksf.hash(GenericArray::from([42; 32])).unwrap();
+        assert_eq!(
+            hex::encode(output),
+            "49fafd0e4b83b923dc3580a20f29306e64fd9c7657cef11aebb86ae5def41bda"
+        );
+
+        let output = ksf.hash(GenericArray::from([42; 64])).unwrap();
+        assert_eq!(
+            hex::encode(output),
+            concat!(
+                "a61f5b25dc3c30a79d8f103626c35a32819096161113853a713686f171424a49",
+                "a5fd861798db2b6ba9b96fb559dfcd42d0927d9ec2874b202fbd08c35ba41024"
+            )
+        );
+    }
+}
