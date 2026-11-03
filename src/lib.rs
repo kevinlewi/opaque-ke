@@ -1358,7 +1358,7 @@
 #![cfg_attr(not(test), deny(unsafe_code))]
 #![warn(clippy::cargo, clippy::doc_markdown, missing_docs, rustdoc::all)]
 #![cfg_attr(not(test), warn(unused_crate_dependencies))]
-#![allow(type_alias_bounds)]
+#![allow(clippy::multiple_crate_versions, type_alias_bounds)]
 
 #[cfg(any(feature = "std", test))]
 extern crate std;

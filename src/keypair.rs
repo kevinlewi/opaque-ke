@@ -283,8 +283,9 @@ impl<G: Group> KeyPair<G> {
         use rand::SeedableRng;
         use rand::rngs::StdRng;
 
-        // The no_shrink is because keypairs should be fixed -- shrinking would cause a
-        // different keypair to be generated, which appears to not be very useful.
+        // The no_shrink is because keypairs should be fixed -- shrinking would
+        // cause a different keypair to be generated, which appears to not be
+        // very useful.
         any::<[u8; 32]>()
             .prop_filter_map("valid random keypair", |seed| {
                 let mut rng = StdRng::from_seed(seed);
