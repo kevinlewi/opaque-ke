@@ -1,1 +1,3 @@
+# Procedural macro dependencies currently require both syn 2 and syn 3.
+allowed-duplicate-crates = ["syn"]
 doc-valid-idents = ["HashEdDSA", "PureEdDSA", ".."]

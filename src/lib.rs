@@ -1359,7 +1359,7 @@
 #![no_std]
 #![cfg_attr(docsrs, feature(doc_cfg))]
 #![cfg_attr(not(test), deny(unsafe_code))]
-#![warn(clippy::doc_markdown, missing_docs, rustdoc::all)]
+#![warn(clippy::cargo, clippy::doc_markdown, missing_docs, rustdoc::all)]
 #![cfg_attr(not(test), warn(unused_crate_dependencies))]
 #![allow(clippy::multiple_crate_versions, type_alias_bounds)]
 
