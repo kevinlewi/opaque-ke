@@ -201,7 +201,8 @@ fn open_locker(
         )
         .unwrap();
 
-    // Server sends locker contents, encrypted under the session key, to the client
+    // Server sends locker contents, encrypted under the session key, to the
+    // client
     let encrypted_locker_contents =
         encrypt(&server_login_finish_result.session_key, &locker.contents);
 

@@ -20,15 +20,13 @@ fn parse_vector_types(input: &str) -> String {
 
     let chunks: Vec<&str> = re.split(input).collect();
 
-    let mut count = 1;
-    for caps in re.captures_iter(input) {
+    for (count, caps) in (1..).zip(re.captures_iter(input)) {
         let vector_type = format!(
             "\"{}\": [\n {} \n]",
-            &caps["type"].trim(),
+            caps["type"].trim(),
             parse_ciphersuites(chunks[count])
         );
         vector_types.push(vector_type);
-        count += 1;
     }
 
     vector_types.join(",\n")
@@ -43,8 +41,7 @@ fn parse_ciphersuites(input: &str) -> String {
 
     let chunks: Vec<&str> = re.split(input).collect();
 
-    let mut count = 1;
-    for caps in re.captures_iter(input) {
+    for (count, caps) in (1..).zip(re.captures_iter(input)) {
         let ciphersuite = format!(
             "{{ \"{}, {}\": {{ {} }} }}",
             &caps["oprf"],
@@ -52,7 +49,6 @@ fn parse_ciphersuites(input: &str) -> String {
             parse_params(chunks[count])
         );
         ciphersuites.push(ciphersuite);
-        count += 1;
     }
 
     ciphersuites.join(",\n")

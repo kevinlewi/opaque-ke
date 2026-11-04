@@ -15,7 +15,7 @@ use std::vec::Vec;
 
 #[cfg(feature = "ecdsa")]
 use ::ecdsa::SignatureSize;
-use cryptoki::context::{CInitializeArgs, Pkcs11};
+use cryptoki::context::{CInitializeArgs, CInitializeFlags, Pkcs11};
 use cryptoki::mechanism::Mechanism;
 use cryptoki::mechanism::elliptic_curve::{EcKdf, Ecdh1DeriveParams};
 use cryptoki::object::{Attribute, AttributeType, KeyType, ObjectClass, ObjectHandle};
@@ -134,8 +134,8 @@ fn triple_dh_curve25519() {
     }
 
     test::<Suite>(
-        // This should be [`Mechanism::EccMontgomeryKeyPairGen`], but SoftHSM has an incorrect
-        // implementation. See https://github.com/softhsm/SoftHSMv2/issues/647.
+        // This should be [`Mechanism::EccMontgomeryKeyPairGen`], but SoftHSM
+        // has an incorrect implementation. See https://github.com/softhsm/SoftHSMv2/issues/647.
         Mechanism::EccEdwardsKeyPairGen,
         ObjectIdentifier::new("1.3.101.110").unwrap(),
         Attribute::Derive(true),
@@ -242,7 +242,7 @@ fn test<CS: 'static + CipherSuite>(
     let key_material_info = server_setup.key_material_info(&[]);
     let key_material = pkcs11_hkdf::<CS>(
         key_material_info.ikm,
-        hmac_mechanism,
+        &hmac_mechanism,
         Vec::from_iter(key_material_info.info.into_iter().flatten().copied()),
     );
     let message = ServerRegistration::start_with_key_material(&server_setup, key_material, message)
@@ -266,7 +266,7 @@ fn test<CS: 'static + CipherSuite>(
     let key_material_info = server_setup.key_material_info(&[]);
     let key_material = pkcs11_hkdf::<CS>(
         key_material_info.ikm,
-        hmac_mechanism,
+        &hmac_mechanism,
         Vec::from_iter(key_material_info.info.into_iter().flatten().copied()),
     );
     let builder = ServerLogin::builder_with_key_material(
@@ -310,7 +310,9 @@ fn test<CS: 'static + CipherSuite>(
 static SESSION: LazyLock<Mutex<Session>> = LazyLock::new(|| {
     let module = env::var("PKCS11_MODULE").expect("`PKCS11_MODULE` environment variable");
     let pkcs11 = Pkcs11::new(module).unwrap();
-    pkcs11.initialize(CInitializeArgs::OsThreads).unwrap();
+    pkcs11
+        .initialize(CInitializeArgs::new(CInitializeFlags::OS_LOCKING_OK))
+        .unwrap();
 
     let slot = pkcs11.get_slots_with_token().unwrap()[0];
 
@@ -380,7 +382,7 @@ fn pkcs11_generate_oprf_seed(length: u64) -> ObjectHandle {
 // by almost all HSMs and still protects the OPRF seed.
 fn pkcs11_hkdf<CS: CipherSuite>(
     hmac: ObjectHandle,
-    mechanism: Mechanism,
+    mechanism: &Mechanism,
     info: Vec<u8>,
 ) -> GenericArray<u8, <OprfGroup<CS> as voprf::Group>::ScalarLen> {
     let mut okm = GenericArray::default();
@@ -403,7 +405,7 @@ fn pkcs11_hkdf<CS: CipherSuite>(
         data.extend(&info);
         data.extend(&[block_n + 1]);
 
-        let output = session.sign(&mechanism, hmac, &data).unwrap();
+        let output = session.sign(mechanism, hmac, &data).unwrap();
         block.copy_from_slice(&output[..block.len()]);
         prev = Some(output);
     }

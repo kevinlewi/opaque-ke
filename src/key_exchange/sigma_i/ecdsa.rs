@@ -52,8 +52,8 @@ where
     type SignatureLen = SignatureSize<G>;
     type VerifyState<CS: CipherSuite, KE: Group> = PreHash<H>;
 
-    // We use a manual implementation of `RandomizedPrehashSigner` to use the same
-    // hash for the message as for generating `k`. See
+    // We use a manual implementation of `RandomizedPrehashSigner` to use the
+    // same hash for the message as for generating `k`. See
     // https://github.com/RustCrypto/signatures/issues/949.
     fn sign<'a, R: CryptoRng + RngCore, CS: CipherSuite, KE: Group>(
         sk: &<Self::Group as Group>::Sk,
@@ -100,8 +100,8 @@ where
     let z =
         hazmat::bits2field::<C>(pre_hash).expect("hash output can not be shorter than a scalar");
 
-    // This can only fail if the computed `r` or `s` are zero, in which case we just
-    // retry with a new `k`. See https://github.com/RustCrypto/signatures/pull/951.
+    // This can only fail if the computed `r` or `s` are zero, in which case we
+    // just retry with a new `k`. See https://github.com/RustCrypto/signatures/pull/951.
     loop {
         let mut ad = FieldBytes::<C>::default();
         rng.fill_bytes(&mut ad);

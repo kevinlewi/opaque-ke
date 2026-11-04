@@ -245,7 +245,8 @@ impl<CS: CipherSuite> Envelope<CS> {
         Ok(OpenedInnerEnvelope { export_key })
     }
 
-    // Creates a dummy envelope object that serializes to the all-zeros byte string
+    // Creates a dummy envelope object that serializes to the all-zeros byte
+    // string
     pub(crate) fn dummy() -> Self {
         Self {
             mode: InnerEnvelopeMode::Zero,

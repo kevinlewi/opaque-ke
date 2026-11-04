@@ -169,21 +169,21 @@ impl<CS: CipherSuite, KE: Group> CachedMessage<CS, KE> {
         transcript: Role,
         identifier: &'a SerializedIdentifier<'_, KeGroup<CS>>,
     ) -> impl Clone + Iterator<Item = &'a [u8]> {
-        Some(identifier.iter())
-            .filter(|_| matches!(transcript, Role::Client))
+        matches!(transcript, Role::Client)
+            .then_some(identifier.iter())
             .into_iter()
             .flatten()
             .chain(self.credential_request.iter())
             .chain(self.ke1_message.iter())
             .chain(
-                Some(identifier.iter())
-                    .filter(|_| matches!(transcript, Role::Server))
+                matches!(transcript, Role::Server)
+                    .then_some(identifier.iter())
                     .into_iter()
                     .flatten(),
             )
             .chain(self.credential_response.iter())
             .chain([self.server_nonce.as_slice(), &self.server_e_pk])
-            .chain(Some(self.server_mac.as_slice()).filter(|_| matches!(transcript, Role::Client)))
+            .chain(matches!(transcript, Role::Client).then_some(self.server_mac.as_slice()))
     }
 }
 
