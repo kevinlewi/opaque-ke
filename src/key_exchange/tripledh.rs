@@ -13,6 +13,7 @@ use core::ops::Add;
 
 use derive_where::derive_where;
 use digest::{Digest, Output, OutputSizeUser};
+use generic_array::sequence::Concat;
 use generic_array::{ArrayLength, GenericArray};
 use hybrid_array::Array;
 use hybrid_array::typenum::Sum;
@@ -33,7 +34,7 @@ use crate::key_exchange::shared::{self, NonceLen};
 pub use crate::key_exchange::shared::{DiffieHellman, Ke1Message, Ke1State};
 use crate::keypair::{PrivateKey, PublicKey};
 use crate::opaque::Identifiers;
-use crate::serialization::{SliceExt, concat};
+use crate::serialization::{ByteArray, HybridArrayExt, SliceExt};
 
 ////////////////////////////
 // High-level API Structs //
@@ -313,7 +314,7 @@ where
     type Len = Sum<OutputSize<H>, OutputSize<H>>;
 
     fn serialize(&self) -> GenericArray<u8, Self::Len> {
-        concat(&[&self.session_key, &self.expected_mac])
+        self.session_key.concat_ref(&self.expected_mac)
     }
 }
 
@@ -353,13 +354,16 @@ impl<H: Hash, G: Group> Serialize for Ke2Message<G, H>
 where
     // Ke2Message: (Nonce + KePk) + Hash
     NonceLen: Add<G::PkLen>,
-    Sum<NonceLen, G::PkLen>: Add<OutputSize<H>>,
+    Sum<NonceLen, G::PkLen>: ArrayLength + Add<OutputSize<H>>,
     Sum<Sum<NonceLen, G::PkLen>, OutputSize<H>>: ArrayLength,
 {
     type Len = Sum<Sum<NonceLen, G::PkLen>, OutputSize<H>>;
 
     fn serialize(&self) -> GenericArray<u8, Self::Len> {
-        concat(&[&self.server_nonce, &self.server_e_pk.serialize(), &self.mac])
+        self.server_nonce
+            .into_generic_array()
+            .concat(self.server_e_pk.serialize().into_generic_array())
+            .concat(self.mac.to_generic_array())
     }
 }
 

@@ -21,6 +21,7 @@ use core::ops::Add;
 
 use derive_where::derive_where;
 use digest::Output;
+use generic_array::sequence::Concat;
 use generic_array::{ArrayLength, GenericArray};
 use hybrid_array::Array;
 use hybrid_array::typenum::{Sum, U2};
@@ -37,7 +38,7 @@ use crate::key_exchange::group::Group;
 use crate::key_exchange::shared::{NonceLen, STR_CONTEXT};
 use crate::keypair::{PrivateKey, PublicKey};
 use crate::opaque::{Identifiers, MaskedResponse, MaskedResponseLen};
-use crate::serialization::{SliceExt, concat, i2osp};
+use crate::serialization::{HybridArrayExt, SliceExt, i2osp};
 
 /// The key exchange trait.
 pub trait KeyExchange {
@@ -156,7 +157,7 @@ impl<CS: CipherSuite> Serialize for SerializedCredentialRequest<CS> {
     type Len = SerializedCredentialRequestLen<CS>;
 
     fn serialize(&self) -> GenericArray<u8, Self::Len> {
-        concat(&[&self.0])
+        self.0.to_generic_array()
     }
 }
 
@@ -212,17 +213,17 @@ type SerializedCredentialResponseLen<CS: CipherSuite> =
 impl<CS: CipherSuite> Serialize for SerializedCredentialResponse<CS>
 where
     <OprfGroup<CS> as voprf::Group>::ElemLen: Add<NonceLen>,
-    Sum<<OprfGroup<CS> as voprf::Group>::ElemLen, NonceLen>: Add<MaskedResponseLen<CS>>,
+    Sum<<OprfGroup<CS> as voprf::Group>::ElemLen, NonceLen>:
+        ArrayLength + Add<MaskedResponseLen<CS>>,
     SerializedCredentialResponseLen<CS>: ArrayLength,
 {
     type Len = SerializedCredentialResponseLen<CS>;
 
     fn serialize(&self) -> GenericArray<u8, Self::Len> {
-        concat(&[
-            &self.evaluation_element,
-            &self.masking_nonce,
-            &self.masked_response.serialize(),
-        ])
+        self.evaluation_element
+            .to_generic_array()
+            .concat(self.masking_nonce.to_generic_array())
+            .concat(self.masked_response.serialize())
     }
 }
 

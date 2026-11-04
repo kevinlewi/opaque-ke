@@ -21,6 +21,7 @@ use generic_array::ArrayLength;
 use hybrid_array::Array;
 use rand::CryptoRng;
 use voprf::Mode;
+use zeroize::Zeroizing;
 
 use super::{Group, STR_OPAQUE_DERIVE_AUTH_KEY_PAIR};
 use crate::errors::{InternalError, ProtocolError};
@@ -59,7 +60,9 @@ where
     }
 
     fn random_sk<R: CryptoRng>(rng: &mut R) -> Self::Sk {
-        SecretKey::<Self>::generate_from_rng(rng)
+        // `SecretKey::generate_from_rng()` can return a zero key, which would
+        // panic in `public_key()`.
+        SecretKey::from(NonZeroScalar::<Self>::generate_from_rng(rng))
     }
 
     fn derive_scalar(seed: Array<u8, Self::SkLen>) -> Result<Self::Sk, InternalError> {
@@ -86,8 +89,10 @@ where
     }
 
     fn deserialize_take_sk(bytes: &mut &[u8]) -> Result<Self::Sk, ProtocolError> {
-        SecretKey::<Self>::from_bytes(&bytes.take_array("secret key")?)
-            .map_err(|_| ProtocolError::SerializationError)
+        let bytes: Zeroizing<Array<u8, Self::SkLen>> =
+            Zeroizing::new(bytes.take_array("secret key")?);
+
+        SecretKey::<Self>::from_bytes(&bytes).map_err(|_| ProtocolError::SerializationError)
     }
 }
 

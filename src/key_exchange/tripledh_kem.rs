@@ -24,6 +24,7 @@ use core::ops::Add;
 
 use derive_where::derive_where;
 use digest::{Digest, Output};
+use generic_array::sequence::Concat;
 use generic_array::{ArrayLength, GenericArray};
 use hybrid_array::typenum::Sum;
 use hybrid_array::{Array, ArraySize};
@@ -35,7 +36,7 @@ use ml_kem::kem::{
 };
 use rand::CryptoRng;
 use subtle::{ConstantTimeEq, CtOption};
-use zeroize::{Zeroize, ZeroizeOnDrop};
+use zeroize::{Zeroize, ZeroizeOnDrop, Zeroizing};
 
 use super::shared::{self, Ke1Message, Ke1State, NonceLen};
 use super::{
@@ -49,7 +50,7 @@ use crate::hash::{Hash, OutputSize};
 use crate::key_exchange::group::Group;
 use crate::keypair::{PrivateKey, PublicKey};
 use crate::opaque::Identifiers;
-use crate::serialization::{SliceExt, concat};
+use crate::serialization::{ByteArray, HybridArrayExt, SliceExt};
 
 /// Adapter trait that augments the `ml-kem` core traits with the metadata
 /// required by OPAQUE (e.g. fixed lengths and serialization hooks).
@@ -169,8 +170,8 @@ where
     fn deserialize_decapsulation_key(
         input: &mut &[u8],
     ) -> Result<Self::DecapsulationKey, ProtocolError> {
-        let bytes: Array<u8, RcDecapsulationKeyLen<K>> =
-            input.take_array("kem decapsulation key")?;
+        let bytes: Zeroizing<Array<u8, RcDecapsulationKeyLen<K>>> =
+            Zeroizing::new(input.take_array("kem decapsulation key")?);
         K::DecapsulationKey::from_expanded_bytes(&bytes)
             .map_err(|_| ProtocolError::SerializationError)
     }
@@ -559,10 +560,11 @@ where
     type Len = Sum<<Ke1State<G> as Serialize>::Len, K::DecapsulationKeyLen>;
 
     fn serialize(&self) -> GenericArray<u8, Self::Len> {
-        concat(&[
-            &self.dh_state.serialize(),
-            &K::serialize_decapsulation_key(&self.kem_decapsulation_key),
-        ])
+        // Intermediate buffers hold secrets and are zeroized when dropped.
+        let dh_state = Zeroizing::new(self.dh_state.serialize());
+        let decapsulation_key =
+            Zeroizing::new(K::serialize_decapsulation_key(&self.kem_decapsulation_key));
+        dh_state.concat_ref(&*decapsulation_key)
     }
 }
 
@@ -584,7 +586,9 @@ where
     type Len = Sum<<Ke1Message<G> as Serialize>::Len, K::EncapsulationKeyLen>;
 
     fn serialize(&self) -> GenericArray<u8, Self::Len> {
-        concat(&[&self.dh_message.serialize(), &self.kem_encapsulation_key])
+        self.dh_message
+            .serialize()
+            .concat(self.kem_encapsulation_key.to_generic_array())
     }
 }
 
@@ -603,7 +607,7 @@ where
     super::tripledh::Ke2State<H>: Serialize,
     <super::tripledh::Ke2State<H> as Serialize>::Len: Add<K::EncapsulationKeyLen>,
     Sum<<super::tripledh::Ke2State<H> as Serialize>::Len, K::EncapsulationKeyLen>:
-        Add<K::CiphertextLen>,
+        ArrayLength + Add<K::CiphertextLen>,
     Sum<
         Sum<<super::tripledh::Ke2State<H> as Serialize>::Len, K::EncapsulationKeyLen>,
         K::CiphertextLen,
@@ -615,11 +619,10 @@ where
     >;
 
     fn serialize(&self) -> GenericArray<u8, Self::Len> {
-        concat(&[
-            &self.base_state.serialize(),
-            &self.kem_encapsulation_key,
-            &self.server_kem_ciphertext,
-        ])
+        // Intermediate buffers hold secrets and are zeroized when dropped.
+        let base_state = Zeroizing::new(self.base_state.serialize());
+        Zeroizing::new(base_state.concat_ref(&self.kem_encapsulation_key))
+            .concat_ref(&self.server_kem_ciphertext)
     }
 }
 
@@ -645,6 +648,8 @@ where
     type Len = Sum<<super::tripledh::Ke2Message<G, H> as Serialize>::Len, K::CiphertextLen>;
 
     fn serialize(&self) -> GenericArray<u8, Self::Len> {
-        concat(&[&self.dh_message.serialize(), &self.kem_ciphertext])
+        self.dh_message
+            .serialize()
+            .concat(self.kem_ciphertext.to_generic_array())
     }
 }

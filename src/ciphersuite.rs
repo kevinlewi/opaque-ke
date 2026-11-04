@@ -11,8 +11,8 @@
 
 use core::ops::Add;
 
-use hybrid_array::ArraySize;
-use hybrid_array::typenum::Sum;
+use generic_array::ArrayLength;
+use generic_array::typenum::Sum;
 
 use crate::envelope::NonceLen;
 use crate::hash::{Hash, OutputSize};
@@ -33,11 +33,14 @@ where
     // Envelope: Nonce + Hash
     // MaskedResponse: (Nonce + Hash) + KePk
     OutputSize<OprfHash<Self>>: Add<NonceLen>,
-    Sum<OutputSize<OprfHash<Self>>, NonceLen>: ArraySize + Add<<KeGroup<Self> as Group>::PkLen>,
-    MaskedResponseLen<Self>: ArraySize,
+    Sum<OutputSize<OprfHash<Self>>, NonceLen>: ArrayLength + Add<<KeGroup<Self> as Group>::PkLen>,
+    MaskedResponseLen<Self>: ArrayLength,
 {
     /// A VOPRF ciphersuite, see [`voprf::CipherSuite`].
-    type OprfCs: voprf::CipherSuite;
+    ///
+    /// The [`ArrayLength`] bounds hold for every [`voprf::Group`] and let
+    /// opaque-ke store VOPRF elements and scalars in its serialized types.
+    type OprfCs: voprf::CipherSuite<Group: voprf::Group<ElemLen: ArrayLength, ScalarLen: ArrayLength>>;
     /// A key exchange protocol
     type KeyExchange: KeyExchange;
     /// A key stretching function, typically used for password hashing

@@ -10,6 +10,7 @@ use core::convert::TryFrom;
 
 use derive_where::derive_where;
 use digest::Output;
+use generic_array::GenericArray;
 use hkdf::Hkdf;
 use hmac::{Hmac, KeyInit, Mac};
 use hybrid_array::Array;
@@ -24,7 +25,7 @@ use crate::key_exchange::SerializedIdentifiers;
 use crate::key_exchange::group::Group;
 use crate::keypair::{KeyPair, PrivateKey, PublicKey};
 use crate::opaque::Identifiers;
-use crate::serialization::{SliceExt, UpdateExt, concat};
+use crate::serialization::{GenericArrayExt, HybridArrayExt, SliceExt, UpdateExt};
 
 // Constant string used as salt for HKDF computation
 const STR_AUTH_KEY: [u8; 7] = *b"AuthKey";
@@ -261,8 +262,10 @@ impl<CS: CipherSuite> Envelope<CS> {
         OutputSize::<OprfHash<CS>>::USIZE + NonceLen::USIZE
     }
 
-    pub(crate) fn serialize(&self) -> Array<u8, EnvelopeLen<CS>> {
-        concat(&[&self.nonce, &self.hmac])
+    pub(crate) fn serialize(&self) -> GenericArray<u8, EnvelopeLen<CS>> {
+        self.nonce
+            .to_generic_array()
+            .concat_ext(&self.hmac.to_generic_array())
     }
 
     pub(crate) fn deserialize_take(bytes: &mut &[u8]) -> Result<Self, ProtocolError> {

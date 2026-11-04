@@ -12,6 +12,7 @@ use core::ops::{Add, Deref};
 
 use derive_where::derive_where;
 use digest::Output;
+use generic_array::sequence::Concat;
 use generic_array::{ArrayLength, GenericArray};
 use hkdf::{Hkdf, HkdfExtract};
 use hybrid_array::Array;
@@ -36,7 +37,7 @@ use crate::keypair::{
 };
 use crate::ksf::Ksf;
 use crate::messages::{CredentialRequestLen, RegistrationUploadLen};
-use crate::serialization::{SliceExt, concat};
+use crate::serialization::{ByteArray, GenericArrayExt, HybridArrayExt, SliceExt};
 use crate::{
     CredentialFinalization, CredentialRequest, CredentialResponse, RegistrationRequest,
     RegistrationResponse, RegistrationUpload, ServerLoginBuilder,
@@ -211,14 +212,13 @@ impl<CS: CipherSuite, SK: Clone, OS: Clone> ServerSetup<CS, SK, OS> {
         OS: OprfSeedSerialization<OprfHash<CS>, SK::Error>,
         // ServerSetup: Hash + KeSk + KePk
         OS::Len: Add<SK::Len>,
-        Sum<OS::Len, SK::Len>: Add<<KeGroup<CS> as Group>::PkLen>,
+        Sum<OS::Len, SK::Len>: ArrayLength + Add<<KeGroup<CS> as Group>::PkLen>,
         ServerSetupLen<CS, SK, OS>: ArrayLength,
     {
-        concat(&[
-            &self.oprf_seed.serialize(),
-            &SK::serialize_key_pair(&self.keypair),
-            &self.dummy_pk.serialize(),
-        ])
+        // Intermediate buffers hold secrets and are zeroized when dropped.
+        let oprf_seed = Zeroizing::new(self.oprf_seed.serialize());
+        let key_pair = Zeroizing::new(SK::serialize_key_pair(&self.keypair));
+        Zeroizing::new(oprf_seed.concat_ref(&*key_pair)).concat_ref(&self.dummy_pk.serialize())
     }
 
     /// Deserialization from bytes
@@ -283,10 +283,8 @@ impl<CS: CipherSuite> ClientRegistration<CS> {
         <OprfGroup<CS> as voprf::Group>::ScalarLen: Add<<OprfGroup<CS> as voprf::Group>::ElemLen>,
         ClientRegistrationLen<CS>: ArrayLength,
     {
-        concat(&[
-            &self.oprf_client.serialize(),
-            &self.blinded_element.serialize(),
-        ])
+        // The serialized blind is zeroized when dropped.
+        Zeroizing::new(self.oprf_client.serialize()).concat_ref(&self.blinded_element.serialize())
     }
 
     /// Deserialization from bytes
@@ -388,7 +386,8 @@ impl<CS: CipherSuite> ServerRegistration<CS> {
     where
         // RegistrationUpload: (KePk + Hash) + Envelope
         <KeGroup<CS> as Group>::PkLen: Add<OutputSize<OprfHash<CS>>>,
-        Sum<<KeGroup<CS> as Group>::PkLen, OutputSize<OprfHash<CS>>>: Add<EnvelopeLen<CS>>,
+        Sum<<KeGroup<CS> as Group>::PkLen, OutputSize<OprfHash<CS>>>:
+            ArrayLength + Add<EnvelopeLen<CS>>,
         RegistrationUploadLen<CS>: ArrayLength,
         // ServerRegistration = RegistrationUpload
     {
@@ -473,14 +472,16 @@ impl<CS: CipherSuite> ClientLogin<CS> {
         <OprfGroup<CS> as voprf::Group>::ScalarLen: Add<CredentialRequestLen<CS>>,
         <CS::KeyExchange as KeyExchange>::KE1State: Serialize,
         Sum<<OprfGroup<CS> as voprf::Group>::ScalarLen, CredentialRequestLen<CS>>:
-            Add<Ke1StateLen<CS>>,
+            ArrayLength + Add<Ke1StateLen<CS>>,
         ClientLoginLen<CS>: ArrayLength,
     {
-        concat(&[
-            &self.oprf_client.serialize(),
-            &self.credential_request.serialize(),
-            &self.ke1_state.serialize(),
-        ])
+        // Intermediate buffers hold secrets and are zeroized when dropped.
+        let blind_and_request = Zeroizing::new(
+            Zeroizing::new(self.oprf_client.serialize())
+                .concat_ref(&self.credential_request.serialize()),
+        );
+        let ke1_state = Zeroizing::new(self.ke1_state.serialize());
+        blind_and_request.concat_ref(&*ke1_state)
     }
 
     /// Deserialization from bytes
@@ -1064,8 +1065,11 @@ pub(crate) type MaskedResponseLen<CS: CipherSuite> =
     Sum<Sum<OutputSize<OprfHash<CS>>, NonceLen>, <KeGroup<CS> as Group>::PkLen>;
 
 impl<CS: CipherSuite> MaskedResponse<CS> {
-    pub(crate) fn serialize(&self) -> Array<u8, MaskedResponseLen<CS>> {
-        concat(&[&self.nonce, &self.hash, &self.pk])
+    pub(crate) fn serialize(&self) -> GenericArray<u8, MaskedResponseLen<CS>> {
+        self.nonce
+            .to_generic_array()
+            .concat_ext(&self.hash.to_generic_array())
+            .concat(self.pk.to_generic_array())
     }
 
     pub(crate) fn deserialize_take(bytes: &mut &[u8]) -> Result<Self, ProtocolError> {
@@ -1087,7 +1091,7 @@ fn mask_response<CS: CipherSuite>(
     server_s_pk: &PublicKey<KeGroup<CS>>,
     envelope: &Envelope<CS>,
 ) -> Result<MaskedResponse<CS>, ProtocolError> {
-    let mut xor_pad = Array::<_, MaskedResponseLen<CS>>::default();
+    let mut xor_pad = GenericArray::<_, MaskedResponseLen<CS>>::default();
 
     Hkdf::<OprfHash<CS>>::from_prk(masking_key)
         .map_err(|_| InternalError::HkdfError)?
@@ -1112,7 +1116,7 @@ fn unmask_response<CS: CipherSuite>(
     masking_nonce: &[u8],
     masked_response: &MaskedResponse<CS>,
 ) -> Result<(PublicKey<KeGroup<CS>>, Envelope<CS>), ProtocolError> {
-    let mut xor_pad = Array::<_, MaskedResponseLen<CS>>::default();
+    let mut xor_pad = GenericArray::<_, MaskedResponseLen<CS>>::default();
 
     Hkdf::<OprfHash<CS>>::from_prk(masking_key)
         .map_err(|_| InternalError::HkdfError)?

@@ -12,6 +12,7 @@ use core::ops::Add;
 
 use derive_where::derive_where;
 use digest::Output;
+use generic_array::sequence::Concat;
 use generic_array::{ArrayLength, GenericArray};
 use hybrid_array::Array;
 use hybrid_array::typenum::{Sum, Unsigned};
@@ -33,7 +34,7 @@ use crate::keypair::PublicKey;
 use crate::opaque::{
     MaskedResponse, MaskedResponseLen, ServerLogin, ServerLoginStartResult, ServerSetup,
 };
-use crate::serialization::{SliceExt, concat};
+use crate::serialization::{HybridArrayExt, SliceExt};
 
 ////////////////////////////
 // High-level API Structs //
@@ -254,10 +255,9 @@ impl<CS: CipherSuite> RegistrationResponse<CS> {
         <OprfGroup<CS> as voprf::Group>::ElemLen: Add<<KeGroup<CS> as Group>::PkLen>,
         RegistrationResponseLen<CS>: ArrayLength,
     {
-        concat(&[
-            &<OprfGroup<CS> as voprf::Group>::serialize_elem(self.evaluation_element.value()),
-            &self.server_s_pk.serialize(),
-        ])
+        <OprfGroup<CS> as voprf::Group>::serialize_elem(self.evaluation_element.value())
+            .into_generic_array()
+            .concat(self.server_s_pk.serialize().into_generic_array())
     }
 
     /// Deserialization from bytes
@@ -295,14 +295,15 @@ impl<CS: CipherSuite> RegistrationUpload<CS> {
     where
         // RegistrationUpload: (KePk + Hash) + Envelope
         <KeGroup<CS> as Group>::PkLen: Add<OutputSize<OprfHash<CS>>>,
-        Sum<<KeGroup<CS> as Group>::PkLen, OutputSize<OprfHash<CS>>>: Add<EnvelopeLen<CS>>,
+        Sum<<KeGroup<CS> as Group>::PkLen, OutputSize<OprfHash<CS>>>:
+            ArrayLength + Add<EnvelopeLen<CS>>,
         RegistrationUploadLen<CS>: ArrayLength,
     {
-        concat(&[
-            &self.client_s_pk.serialize(),
-            &self.masking_key,
-            &self.envelope.serialize(),
-        ])
+        self.client_s_pk
+            .serialize()
+            .into_generic_array()
+            .concat(self.masking_key.to_generic_array())
+            .concat(self.envelope.serialize())
     }
 
     /// Deserialization from bytes
@@ -343,10 +344,9 @@ impl<CS: CipherSuite> CredentialRequest<CS> {
         <OprfGroup<CS> as voprf::Group>::ElemLen: Add<Ke1MessageLen<CS>>,
         CredentialRequestLen<CS>: ArrayLength,
     {
-        concat(&[
-            &<OprfGroup<CS> as voprf::Group>::serialize_elem(self.blinded_element.value()),
-            &self.ke1_message.serialize(),
-        ])
+        <OprfGroup<CS> as voprf::Group>::serialize_elem(self.blinded_element.value())
+            .into_generic_array()
+            .concat(self.ke1_message.serialize())
     }
 
     /// Deserialization from bytes
@@ -395,17 +395,18 @@ impl<CS: CipherSuite> CredentialResponse<CS> {
         <CS::KeyExchange as KeyExchange>::KE2Message: Serialize,
         // CredentialResponseWithoutKeLen: (KgPk + Nonce) + MaskedResponse
         <OprfGroup<CS> as voprf::Group>::ElemLen: Add<NonceLen>,
-        Sum<<OprfGroup<CS> as voprf::Group>::ElemLen, NonceLen>: Add<MaskedResponseLen<CS>>,
+        Sum<<OprfGroup<CS> as voprf::Group>::ElemLen, NonceLen>:
+            ArrayLength + Add<MaskedResponseLen<CS>>,
+        CredentialResponseWithoutKeLen<CS>: ArrayLength,
         // CredentialResponse: CredentialResponseWithoutKeLen + Ke2Message
         CredentialResponseWithoutKeLen<CS>: Add<Ke2MessageLen<CS>>,
         CredentialResponseLen<CS>: ArrayLength,
     {
-        concat(&[
-            &<OprfGroup<CS> as voprf::Group>::serialize_elem(self.evaluation_element.value()),
-            &self.masking_nonce,
-            &self.masked_response.serialize(),
-            &self.ke2_message.serialize(),
-        ])
+        <OprfGroup<CS> as voprf::Group>::serialize_elem(self.evaluation_element.value())
+            .into_generic_array()
+            .concat(self.masking_nonce.to_generic_array())
+            .concat(self.masked_response.serialize())
+            .concat(self.ke2_message.serialize())
     }
 
     /// Deserialization from bytes

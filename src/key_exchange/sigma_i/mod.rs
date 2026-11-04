@@ -26,13 +26,14 @@ use core::ops::Add;
 
 use derive_where::derive_where;
 use digest::{Mac, Output, OutputSizeUser};
+use generic_array::sequence::Concat;
 use generic_array::{ArrayLength, GenericArray};
 use hmac::{Hmac, KeyInit};
 use hybrid_array::typenum::Sum;
 use hybrid_array::{Array, ArraySize};
 use rand::CryptoRng;
 use subtle::{ConstantTimeEq, CtOption};
-use zeroize::Zeroize;
+use zeroize::{Zeroize, Zeroizing};
 
 use self::message::Role;
 pub use self::message::{CachedMessage, HashOutput, Message, MessageBuilder, VerifyMessage};
@@ -50,7 +51,7 @@ pub use crate::key_exchange::shared::{DiffieHellman, Ke1Message, Ke1State};
 use crate::key_exchange::shared::{derive_keys, generate_ke1, generate_nonce, transcript};
 use crate::keypair::{KeyPair, PrivateKey, PublicKey};
 use crate::opaque::Identifiers;
-use crate::serialization::{SliceExt, UpdateExt, concat};
+use crate::serialization::{ByteArray, HybridArrayExt, SliceExt, UpdateExt};
 
 /// The SIGMA-I key exchange implementation
 ///
@@ -495,20 +496,20 @@ where
     SIG::VerifyState<CS, KE>: Serialize,
     // Ke2State: ((SigPk + Hash) + VerifyState) + Hash
     <SIG::Group as Group>::PkLen: Add<OutputSize<KeHash<CS>>>,
-    Sum<<SIG::Group as Group>::PkLen, OutputSize<KeHash<CS>>>: Add<VerifyStateLen<CS, SIG, KE>>,
+    Sum<<SIG::Group as Group>::PkLen, OutputSize<KeHash<CS>>>:
+        ArrayLength + Add<VerifyStateLen<CS, SIG, KE>>,
     Sum<Sum<<SIG::Group as Group>::PkLen, OutputSize<KeHash<CS>>>, VerifyStateLen<CS, SIG, KE>>:
-        Add<OutputSize<KeHash<CS>>>,
+        ArrayLength + Add<OutputSize<KeHash<CS>>>,
     Ke2StateLen<CS, SIG, KE>: ArrayLength,
 {
     type Len = Ke2StateLen<CS, SIG, KE>;
 
     fn serialize(&self) -> GenericArray<u8, Self::Len> {
-        concat(&[
-            &self.client_s_pk.serialize(),
-            &self.session_key,
-            &self.verify_state.serialize(),
-            &self.expected_mac,
-        ])
+        // Intermediate buffers hold secrets and are zeroized when dropped.
+        let pk_and_session_key =
+            Zeroizing::new(self.client_s_pk.serialize().concat_ref(&self.session_key));
+        let verify_state = Zeroizing::new(self.verify_state.serialize());
+        Zeroizing::new(pk_and_session_key.concat_ref(&*verify_state)).concat_ref(&self.expected_mac)
     }
 }
 
@@ -527,19 +528,18 @@ impl<SIG: SignatureProtocol, KE: Group, KEH: Hash> Serialize for Ke2Message<SIG,
 where
     // Ke2Message: ((Nonce + KePk) + Signature) + Hash
     NonceLen: Add<KE::PkLen>,
-    Sum<NonceLen, KE::PkLen>: Add<SIG::SignatureLen>,
-    Sum<Sum<NonceLen, KE::PkLen>, SIG::SignatureLen>: Add<OutputSize<KEH>>,
+    Sum<NonceLen, KE::PkLen>: ArrayLength + Add<SIG::SignatureLen>,
+    Sum<Sum<NonceLen, KE::PkLen>, SIG::SignatureLen>: ArrayLength + Add<OutputSize<KEH>>,
     Sum<Sum<Sum<NonceLen, KE::PkLen>, SIG::SignatureLen>, OutputSize<KEH>>: ArrayLength,
 {
     type Len = Sum<Sum<Sum<NonceLen, KE::PkLen>, SIG::SignatureLen>, OutputSize<KEH>>;
 
     fn serialize(&self) -> GenericArray<u8, Self::Len> {
-        concat(&[
-            &self.server_nonce,
-            &self.server_e_pk.serialize(),
-            &SIG::serialize_signature(&self.signature),
-            &self.mac,
-        ])
+        self.server_nonce
+            .into_generic_array()
+            .concat(self.server_e_pk.serialize().into_generic_array())
+            .concat(SIG::serialize_signature(&self.signature).into_generic_array())
+            .concat(self.mac.to_generic_array())
     }
 }
 
@@ -561,6 +561,8 @@ where
     type Len = Sum<SIG::SignatureLen, OutputSize<KEH>>;
 
     fn serialize(&self) -> GenericArray<u8, Self::Len> {
-        concat(&[&SIG::serialize_signature(&self.signature), &self.mac])
+        SIG::serialize_signature(&self.signature)
+            .into_generic_array()
+            .concat(self.mac.to_generic_array())
     }
 }

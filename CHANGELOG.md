@@ -1,15 +1,57 @@
 # Changelog
 
 ## Unreleased
-
-Upgrade the optional Argon2 dependency to 0.6, preserving the existing KSF
-parameters and output bytes.
-Migrate to `elliptic-curve` 0.14.3 and the corresponding voprf/RustCrypto APIs
-to remove the `crypto-bigint` 0.5 dependency affected by RUSTSEC-2026-0387.
-The Rust 1.87 MSRV is unchanged. Public hash, RNG, group and buffer types follow
-the new dependencies; protocol encodings, registration records and ML-KEM
-expanded-key client states retain their existing byte formats. The README
-describes the API changes and the voprf release dependency.
+* Migrated to the RustCrypto 0.14 / `hybrid-array` ecosystem, removing the
+  `crypto-bigint` 0.5 dependency affected by
+  [RUSTSEC-2026-0387](https://rustsec.org/advisories/RUSTSEC-2026-0387.html)
+  (thanks to [nbari](https://github.com/nbari) for #428 and #427; resolves #426,
+  supersedes #424):
+  * digest 0.10 -> 0.11, hkdf/hmac 0.12 -> 0.13, elliptic-curve 0.13 -> 0.14.3,
+    curve25519-dalek 4 -> 5, ed25519-dalek 2 -> 3, ecdsa 0.16 -> 0.17,
+    rand 0.8 -> 0.10, voprf 0.5 -> 0.6.0-pre.2, generic-array 0.14 -> 1, and
+    the new hybrid-array 0.4 dependency
+  * argon2 0.5 -> 0.6, preserving the existing KSF parameters and output bytes
+  * The direct rfc6979 dependency was removed; ECDSA signing now uses
+    `ecdsa::hazmat::sign_prehashed_rfc6979()`
+  * Parts of this migration were adapted from the `sid-opaque-ke` crate of the
+    [structured-id/sid](https://github.com/structured-id/sid) project
+* Increased MSRV to 1.88
+* **Breaking: primitive buffers are now `hybrid_array::Array`** (re-exported as
+  `pub use hybrid_array;`): hash outputs (`digest::Output`, e.g. session keys,
+  export keys and OPRF seeds), `Group` public and secret key encodings,
+  signatures, ML-KEM keys and ciphertexts, `PrivateKeySerialization` and
+  `OprfSeedSerialization` outputs and `Ksf::hash()` inputs and outputs. Their
+  length types (e.g. `Group::PkLen`, `PrivateKeySerialization::Len`) are bound
+  by both `hybrid_array::ArraySize` and `generic_array::ArrayLength`
+* **Breaking: serialized messages (`serialize()` outputs and `*Len` aliases)
+  remain `generic_array::GenericArray`, now from generic-array 1.x**, to support
+  compound lengths. Length bounds are now `generic_array::ArrayLength` instead of
+  `ArrayLength<u8>`, and `pub use generic_array;` now re-exports generic-array 1.x
+* **Breaking: RNG bounds are now `rand::CryptoRng` from rand 0.10** (rand_core
+  0.10) instead of `RngCore + CryptoRng` from rand 0.8. `rand::rngs::SysRng` is
+  fallible and can be used via `rand::rand_core::UnwrapErr(SysRng)`
+* **Breaking: the `Hash` trait bounds were simplified** to build on
+  `digest::block_api::EagerHash`; the repeated `ProxyHash`, `IsLess<U256>` and
+  `NonZero` bounds are gone and `ProxyHash` was removed
+* **Breaking: the getrandom wasm backend is no longer enabled by opaque-ke.**
+  The `std` feature now only enables `rand/std`. Web (`wasm32-unknown-unknown`)
+  users who rely on system randomness must enable getrandom's `wasm_js` feature
+  themselves
+* **Breaking: elliptic curve ciphersuites need p256/p384/p521 0.14 with the
+  `oprf` feature** (previously the `voprf` and `hash2curve` features of 0.13)
+* **Breaking: `sigma_i::ecdsa::Signature<G>` now requires `G: EcdsaCurve`**,
+  following ecdsa 0.17
+* ECDSA signatures may differ from the previous implementation for the same
+  RNG output in negligible-probability cases: rfc6979 0.6 reduces the message
+  hash modulo the curve order, and rejected `k` values now continue the
+  HMAC-DRBG instead of drawing new randomness
+* Randomly generated values (e.g. blinds and secret keys) can differ from
+  previous versions for the same RNG output, because voprf 0.6 and
+  elliptic-curve 0.14 consume RNG bytes differently. Protocol encodings,
+  registration records and ML-KEM expanded-key client states keep their
+  existing byte formats
+* Upgraded the HSM test dependency to cryptoki 0.12.1 to address
+  RUSTSEC-2026-0286
 
 ## 4.1.0-pre.2 (March 26, 2026)
 * Upgraded ml-kem from 0.2 to 0.3.0-rc.0

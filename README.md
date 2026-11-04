@@ -27,16 +27,13 @@ opaque-ke = "4.1.0-pre.2"
 
 ### Minimum Supported Rust Version
 
-Rust **1.87** or higher.
+Rust **1.88** or higher.
 
 ### RustCrypto API migration
 
-The migration requires `elliptic-curve` 0.14.3 and a matching voprf update,
+The migration requires `elliptic-curve` 0.14.3 and voprf 0.6.0-pre.2,
 removing the `crypto-bigint` 0.5 path affected by
 [RUSTSEC-2026-0387](https://rustsec.org/advisories/RUSTSEC-2026-0387.html).
-Until [the voprf update](https://github.com/meta/voprf/pull/159) is released, the
-dependency is pinned to its companion revision for reproducible testing and
-must be replaced by a released version before publishing this crate.
 
 Custom cipher suites and group implementations now use `digest` 0.11,
 `rand`/`rand_core` 0.10, and the corresponding RustCrypto group/signature types.
@@ -44,6 +41,9 @@ Primitive buffers use `hybrid_array::Array`; serialized messages continue to use
 `generic_array::GenericArray`, now from version 1, to support compound lengths.
 System randomness is available through `rand::rngs::SysRng`, wrapped in
 `rand::rand_core::UnwrapErr` when an infallible generator is required.
+opaque-ke no longer enables getrandom's `wasm_js` backend: users targeting
+`wasm32-unknown-unknown` in the browser who rely on system randomness must
+enable `getrandom/wasm_js` themselves.
 
 The existing protocol vectors and persisted registration formats are preserved.
 The optional ML-KEM integration continues to serialize expanded decapsulation

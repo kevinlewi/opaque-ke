@@ -11,7 +11,7 @@
 //!
 //! ### Minimum Supported Rust Version
 //!
-//! Rust **1.87** or higher.
+//! Rust **1.88** or higher.
 //!
 //! # Overview
 //!
@@ -1361,7 +1361,7 @@
 #![cfg_attr(not(test), deny(unsafe_code))]
 #![warn(clippy::cargo, clippy::doc_markdown, missing_docs, rustdoc::all)]
 #![cfg_attr(not(test), warn(unused_crate_dependencies))]
-#![allow(clippy::multiple_crate_versions, type_alias_bounds)]
+#![allow(type_alias_bounds)]
 
 #[cfg(any(feature = "std", test))]
 extern crate std;

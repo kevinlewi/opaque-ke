@@ -12,6 +12,7 @@
 
 use derive_where::derive_where;
 use digest::{Output, OutputSizeUser};
+use generic_array::ArrayLength;
 use hybrid_array::{Array, ArraySize};
 use rand::CryptoRng;
 
@@ -152,7 +153,7 @@ pub trait PrivateKeySerialization<G: Group>: Clone {
     /// Custom error type that can be passed down to `ProtocolError::Custom`
     type Error;
     /// Serialization size in bytes.
-    type Len: ArraySize;
+    type Len: ArraySize + ArrayLength;
 
     /// Serialization into bytes
     fn serialize_key_pair(key_pair: &KeyPair<G, Self>) -> Array<u8, Self::Len>;
@@ -242,7 +243,7 @@ pub struct OprfSeed<H: OutputSizeUser>(pub(crate) Output<H>);
 /// Will be called with `E` being [`PrivateKeySerialization::Error`].
 pub trait OprfSeedSerialization<H, E>: Sized {
     /// Serialization size in bytes.
-    type Len: ArraySize;
+    type Len: ArraySize + ArrayLength;
 
     /// Serialization into bytes
     fn serialize(&self) -> Array<u8, Self::Len>;
@@ -253,7 +254,7 @@ pub trait OprfSeedSerialization<H, E>: Sized {
     fn deserialize_take(bytes: &mut &[u8]) -> Result<Self, ProtocolError<E>>;
 }
 
-impl<H: OutputSizeUser, E> OprfSeedSerialization<H, E> for OprfSeed<H> {
+impl<H: OutputSizeUser<OutputSize: ArrayLength>, E> OprfSeedSerialization<H, E> for OprfSeed<H> {
     type Len = H::OutputSize;
 
     fn serialize(&self) -> Array<u8, Self::Len> {

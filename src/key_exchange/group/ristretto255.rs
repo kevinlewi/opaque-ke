@@ -16,8 +16,8 @@ use curve25519_dalek::traits::IsIdentity;
 use digest::block_api::BlockSizeUser;
 use digest::{FixedOutput, HashMarker};
 use hybrid_array::Array;
-use hybrid_array::typenum::{IsGreaterOrEqual, IsLess, IsLessOrEqual, Prod, True, U2, U32, U256};
-use rand::{CryptoRng, TryCryptoRng, TryRng};
+use hybrid_array::typenum::{IsGreaterOrEqual, IsLessOrEqual, Prod, True, U2, U32};
+use rand::{CryptoRng, TryCryptoRng};
 use voprf::Mode;
 use zeroize::ZeroizeOnDrop;
 
@@ -173,8 +173,7 @@ impl voprf::Group for Ristretto255 {
     ) -> voprf::Result<Self::Elem, voprf::InternalError>
     where
         H: BlockSizeUser + Default + FixedOutput + HashMarker,
-        H::OutputSize: IsLess<U256, Output = True>
-            + IsLessOrEqual<H::BlockSize, Output = True>
+        H::OutputSize: IsLessOrEqual<H::BlockSize, Output = True>
             + IsGreaterOrEqual<Prod<Self::SecurityLevel, U2>, Output = True>,
     {
         <voprf::Ristretto255 as voprf::Group>::hash_to_curve::<H>(input, dst)
@@ -186,8 +185,7 @@ impl voprf::Group for Ristretto255 {
     ) -> voprf::Result<Self::Scalar, voprf::InternalError>
     where
         H: BlockSizeUser + Default + FixedOutput + HashMarker,
-        H::OutputSize: IsLess<U256, Output = True>
-            + IsLessOrEqual<H::BlockSize, Output = True>
+        H::OutputSize: IsLessOrEqual<H::BlockSize, Output = True>
             + IsGreaterOrEqual<Prod<Self::SecurityLevel, U2>, Output = True>,
     {
         <voprf::Ristretto255 as voprf::Group>::hash_to_scalar::<H>(input, dst)
@@ -209,7 +207,7 @@ impl voprf::Group for Ristretto255 {
         <voprf::Ristretto255 as voprf::Group>::deserialize_elem(element_bits)
     }
 
-    fn random_scalar<R: TryRng + TryCryptoRng>(rng: &mut R) -> voprf::Result<Self::Scalar> {
+    fn random_scalar<R: TryCryptoRng>(rng: &mut R) -> voprf::Result<Self::Scalar> {
         <voprf::Ristretto255 as voprf::Group>::random_scalar(rng)
     }
 

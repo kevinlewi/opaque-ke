@@ -10,12 +10,14 @@ use core::ops::Add;
 
 use derive_where::derive_where;
 use digest::{Digest, Mac, Output, OutputSizeUser, Update};
+use generic_array::sequence::Concat;
 use generic_array::{ArrayLength, GenericArray};
 use hkdf::{Hkdf, HkdfExtract};
 use hmac::{Hmac, KeyInit};
 use hybrid_array::Array;
 use hybrid_array::typenum::{Sum, U1, U2, U32, Unsigned};
 use rand::CryptoRng;
+use zeroize::Zeroizing;
 
 use super::{
     Deserialize, GenerateKe1Result, KeyExchange, Serialize, SerializedContext,
@@ -26,7 +28,7 @@ use crate::errors::{InternalError, ProtocolError};
 use crate::hash::{Hash, OutputSize};
 use crate::key_exchange::group::Group;
 use crate::keypair::{KeyPair, PrivateKey, PublicKey};
-use crate::serialization::{SliceExt, UpdateExt, concat, i2osp};
+use crate::serialization::{ByteArray, HybridArrayExt, SliceExt, UpdateExt, i2osp};
 
 ///////////////
 // Constants //
@@ -375,7 +377,8 @@ where
     type Len = Sum<G::SkLen, NonceLen>;
 
     fn serialize(&self) -> GenericArray<u8, Self::Len> {
-        concat(&[&self.client_e_sk.serialize(), &self.client_nonce])
+        // The serialized secret key is zeroized when dropped.
+        Zeroizing::new(self.client_e_sk.serialize()).concat_ref(&self.client_nonce)
     }
 }
 
@@ -397,7 +400,9 @@ where
     type Len = Sum<NonceLen, G::PkLen>;
 
     fn serialize(&self) -> GenericArray<u8, Self::Len> {
-        concat(&[&self.client_nonce, &self.client_e_pk.serialize()])
+        self.client_nonce
+            .into_generic_array()
+            .concat(self.client_e_pk.serialize().into_generic_array())
     }
 }
 
@@ -442,6 +447,8 @@ where
     Ke1MessageIterLen<G>: ArrayLength,
 {
     pub(crate) fn serialize(&self) -> GenericArray<u8, Ke1MessageIterLen<G>> {
-        concat(&[&self.client_nonce, &self.client_e_pk])
+        self.client_nonce
+            .into_generic_array()
+            .concat(self.client_e_pk.to_generic_array())
     }
 }
