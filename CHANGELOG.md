@@ -1,6 +1,10 @@
 # Changelog
 
 ## Unreleased
+* Fixed serde deserialization of Ed25519 `SigningKey` (used by the SIGMA-I
+  EdDSA ciphersuites, e.g. in a serialized `ServerSetup`): the stored 32-byte
+  seed was parsed as a canonical scalar, so deserialization failed for most
+  keys. Affects all releases since 4.0.0. The serialized format is unchanged
 * Migrated to the RustCrypto 0.14 / `hybrid-array` ecosystem, removing the
   `crypto-bigint` 0.5 dependency affected by
   [RUSTSEC-2026-0387](https://rustsec.org/advisories/RUSTSEC-2026-0387.html)

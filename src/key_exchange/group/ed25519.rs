@@ -344,6 +344,7 @@ impl<'de> serde::Deserialize<'de> for SigningKey {
         use core::fmt::{self, Formatter};
 
         use serde::de::{Deserialize, Deserializer, Error, SeqAccess, Visitor};
+        use zeroize::Zeroizing;
 
         struct SigningKeyVisitor;
 
@@ -354,22 +355,25 @@ impl<'de> serde::Deserialize<'de> for SigningKey {
                 Formatter::write_str(formatter, "tuple struct SigningKey")
             }
 
+            // The serialized form is the raw 32-byte seed (see `Serialize`
+            // below), which is generally not a canonical scalar, so it must not
+            // be parsed as a `Scalar`.
             fn visit_newtype_struct<D>(self, deserializer: D) -> Result<Self::Value, D::Error>
             where
                 D: Deserializer<'de>,
             {
-                let sk = Scalar::deserialize(deserializer)?;
-                Ok(SigningKey::from_bytes(sk.to_bytes()))
+                let sk = Zeroizing::<SecretKey>::deserialize(deserializer)?;
+                Ok(SigningKey::from_bytes(*sk))
             }
 
             fn visit_seq<A>(self, mut seq: A) -> Result<Self::Value, A::Error>
             where
                 A: SeqAccess<'de>,
             {
-                let sk: Scalar = seq.next_element()?.ok_or_else(|| {
+                let sk: Zeroizing<SecretKey> = seq.next_element()?.ok_or_else(|| {
                     Error::invalid_length(0, &"tuple struct SigningKey with 1 element")
                 })?;
-                Ok(SigningKey::from_bytes(sk.to_bytes()))
+                Ok(SigningKey::from_bytes(*sk))
             }
         }
 
@@ -502,5 +506,29 @@ mod test {
             &custom_signature,
         )
         .unwrap();
+    }
+
+    /// Serde must round-trip any signing key, not just those whose seed
+    /// happens to be a canonical scalar.
+    #[cfg(feature = "serde")]
+    #[test]
+    fn signing_key_serde_roundtrip() {
+        for _ in 0..64 {
+            let mut sk = SecretKey::default();
+            rand::rng().fill_bytes(&mut sk);
+            let signing_key = super::SigningKey::from_bytes(sk);
+
+            let json = serde_json::to_string(&signing_key).unwrap();
+            let from_json: super::SigningKey = serde_json::from_str(&json).unwrap();
+            assert_eq!(signing_key, from_json);
+
+            let bytes = bincode::serialize(&signing_key).unwrap();
+            let from_bincode: super::SigningKey = bincode::deserialize(&bytes).unwrap();
+            assert_eq!(signing_key, from_bincode);
+
+            // The encoding is the raw 32-byte seed, so it stays compatible
+            // with data serialized by previous versions.
+            assert_eq!(bytes, sk);
+        }
     }
 }
