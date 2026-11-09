@@ -71,24 +71,24 @@ struct Locker {
 
 // Given a key and plaintext, produce an AEAD ciphertext along with a nonce
 fn encrypt(key: &[u8], plaintext: &[u8]) -> Vec<u8> {
-    let cipher = ChaCha20Poly1305::new(Key::from_slice(&key[..32]));
+    let cipher = ChaCha20Poly1305::new(&Key::try_from(&key[..32]).unwrap());
 
     let mut rng = UnwrapErr(SysRng);
     let mut nonce_bytes = [0u8; 12];
     rng.fill_bytes(&mut nonce_bytes);
-    let nonce = Nonce::from_slice(&nonce_bytes);
+    let nonce = Nonce::from(nonce_bytes);
 
-    let ciphertext = cipher.encrypt(nonce, plaintext.as_ref()).unwrap();
+    let ciphertext = cipher.encrypt(&nonce, plaintext.as_ref()).unwrap();
     [nonce_bytes.to_vec(), ciphertext].concat()
 }
 
 // Decrypt using a key and a ciphertext (nonce included) to recover the original
 // plaintext
 fn decrypt(key: &[u8], ciphertext: &[u8]) -> Vec<u8> {
-    let cipher = ChaCha20Poly1305::new(Key::from_slice(&key[..32]));
+    let cipher = ChaCha20Poly1305::new(&Key::try_from(&key[..32]).unwrap());
     cipher
         .decrypt(
-            Nonce::from_slice(&ciphertext[..12]),
+            &Nonce::try_from(&ciphertext[..12]).unwrap(),
             ciphertext[12..].as_ref(),
         )
         .unwrap()
