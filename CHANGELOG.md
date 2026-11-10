@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 5.0.0-pre.0 (November 13, 2026)
 * Increased MSRV to 1.88
 * Migrated to the RustCrypto 0.14 dependencies (fixes RUSTSEC-2026-0387)
   * **Breaking: primitive buffers now use hybrid-array; serialized messages use generic-array 1**
